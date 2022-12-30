@@ -15,34 +15,50 @@ commandId_t commandId_reply = REPLY_NONE;
 extern UART_HandleTypeDef huart1;
 extern osMessageQId simRespMessageHandle;
 extern osThreadId parcerTaskHandle;
+extern QueueHandle_t qSimcomHandle;
+extern int8_t testResponse;
+extern RTC_TimeTypeDef sTime;
+extern RTC_DateTypeDef sDate;
+extern RTC_HandleTypeDef hrtc;
+
+simcom_t simcomHandler = {0};
 
 simcomRxType simcomRxData = {0};
 
-uint8_t simcomInitStatus = 0;
-
-simcom_cmd_t cmds[] = {
+const simcom_cmd_t cmds[] = {
 /*{command						len,		timeout,		retry,      expect_reply}*/
 { "AT\r\n", 					4, 			500, 			10, 		REPLY_OK },
 { "AT+CPIN?\r\n", 				10, 		500, 			20, 		REPLY_CPIN },
 { "AT+CSQ\r\n", 				8, 			500, 			60, 		REPLY_CSQ },
 { "AT+CGREG?\r\n", 				11, 		500, 			60,			REPLY_CGREG },
-{ "AT+NETOPEN\r\n", 			12, 		500, 			1, 			REPLY_NETOPEN },
+{ "AT+NETOPEN\r\n", 			12, 		1000, 			1, 			REPLY_NETOPEN },
 { "AT+CIPCLOSE=0\r\n", 			15, 		500, 			1, 			REPLY_CIPCLOSE },
 { "AT+NETCLOSE\r\n", 			13, 		500, 			1, 			REPLY_NETCLOSE },
 { "AT+CFUN=0\r\n", 				11, 		5000, 			1, 			REPLY_INCFUN },
-{ "AT+CFUN=1\r\n", 				11, 		0, 				1, 			REPLY_OUTCFUN }, };
+{ "AT+CFUN=1\r\n", 				11, 		3000,			1, 			REPLY_OUTCFUN },
+{ "AT+CTZU?\r\n", 				10, 		500, 			1, 			REPLY_TIME_UPDATE_AUTO },
+{ "AT+CTZU=1\r\n", 				11, 		500, 			1, 			REPLY_TIME_UPDATE_ENABLED },
+{ "AT+CCLK?\r\n", 				10, 		500, 			1, 			REPLY_DATE_TIME }};
+
+uint8_t dateTimeStrToINt (const uint8_t * buf) {
+	uint8_t digit1 = 0;
+	uint8_t digit2 = 0;
+
+	digit1 = *buf - 0x30;
+	digit1 *= 10;
+	digit2 = *(buf+1) - 0x30;
+	return digit1 + digit2;
+}
 
 int8_t simcomExecuteCmd(simcom_cmd_t cmd) {
 
 	osEvent event;
 	uint8_t reply = REPLY_NONE;
-	_DEBUG(3, "line = %d\r\n", __LINE__);
 
 	do {
-		HAL_UART_Transmit_DMA(&huart1, (uint8_t*) cmd.data, cmd.len);
+		HAL_UART_Transmit_DMA(&huart1, (const uint8_t *)cmd.data, cmd.len);
 		event = osMessageGet(simRespMessageHandle, (uint32_t) cmd.timeout);
 		if (event.status == osEventMessage) {
-
 			if (cmd.expect_retval == REPLY_CIPCLOSE) {
 				osDelay(5000);
 			} else if (cmd.expect_retval == REPLY_NETCLOSE) {
@@ -51,24 +67,21 @@ int8_t simcomExecuteCmd(simcom_cmd_t cmd) {
 			reply = event.value.v;
 			if (reply == cmd.expect_retval) {
 				_DEBUG(3, "----reply----%d\r\n", reply);
-				return reply;
+					return reply;
 			}
 		} else if (event.status == osEventTimeout) {
 			reply = REPLY_TIMEOUT;
-			_DEBUG(3, "CMD has no response\r\n");
+			_DEBUG(3, "CMD timed out\r\n");
 		}
-	} while (--cmd.retry_count > 0);
-
+	} while (--cmd.retry_count);
 	return reply;
 }
 
-int8_t simcomSetServer(uint8_t *server, uint16_t port, uint16_t waitMs,
-		int8_t retryCount) {
+int8_t simcomSetServer(char *server, uint16_t port, uint16_t waitMs, int8_t retryCount) {
 
 	uint8_t startConnectString[64];
 	uint8_t reply = REPLY_NONE;
-	uint16_t len = sprintf((char*) startConnectString,
-			"AT+CIPOPEN=0,\"TCP\",\"%s\",%d\r\n", server, port);
+	uint16_t len = sprintf((char*) startConnectString, "AT+CIPOPEN=0,\"TCP\",\"%s\",%d\r\n", server, port);
 	osEvent event;
 
 	do {
@@ -86,29 +99,41 @@ int8_t simcomSetServer(uint8_t *server, uint16_t port, uint16_t waitMs,
 	return reply;
 }
 
-void simcomOpenNet(void) {
+int8_t simcomOpenNet(void) {
 
-	if (simcomExecuteCmd(cmds[NETOPEN]) != REPLY_NETOPEN) {
+	int8_t reply = REPLY_NONE;
+	reply = simcomExecuteCmd(cmds[NETOPEN]);
 
-		if (commandId_reply == REPLY_ERROR) {
+	if (reply != REPLY_NETOPEN) {
 
-			_DEBUG(3, "+IP ERROR: Network is already opened and needs to close\r\n");
+		if (reply == REPLY_ERROR) {
+
+			_DEBUG(3, "+IP ERROR: Already connected\r\n");
 			if (simcomExecuteCmd(cmds[NETCLOSE]) != REPLY_NETCLOSE) {
-				_DEBUG(2, "NET IS CLOSED\r\n");
+				_DEBUG(3, "NET IS CLOSED\r\n");
 			}
 			osDelay(2000);
-			if (simcomExecuteCmd(cmds[NETOPEN]) != REPLY_NETOPEN) {
+			reply = simcomExecuteCmd(cmds[NETOPEN]);
+			if (reply != REPLY_NETOPEN) {
 				//переинициализировать SIM7600
+			} else {
+				_DEBUG(3, "NET IS OPEN\r\n");
 			}
 		}
+	} else {
+		puts ("NET IS OPEN");
 	}
+	return reply;
 }
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
+	BaseType_t xHigherPriorityTaskWoken = 0;
+
 	if (huart->Instance == USART1) {
 		simcomRxData.simcomRxLen = Size;
-
+		if (xQueueSendFromISR(qSimcomHandle, &simcomRxData, &xHigherPriorityTaskWoken) != pdTRUE) {
+		}
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart1, simcomRxData.simcomRxBuf, RX_BUFFER_SIZE);
 	}
 }
@@ -127,30 +152,31 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len) {
 		if ((strncmp((const char*)(buffer + Len - 9), "AT", 2)) == 0 && strncmp((const char*)(buffer + Len - 4), "OK", 2) == 0){
 
 			reply = REPLY_OK;
-
+			puts ("Parcer: REPLY_OK\r\n");
 		}
 
 		else if (Len >= 7 && Len < 66 && strncmp((const char*)(buffer + Len - 7), "ERROR", 5) == 0)
 						{
 			reply = REPLY_ERROR;
+			puts ("Parcer: REPLY_ERROR\r\n");
 		}
 
 		///CPIN
 		if (Len >= 31 && strncmp((const char*)(buffer + Len - 20), "+CPIN:", 6) == 0) {
 			if (strstr((const char*)buffer, "READY") != NULL) {
 				reply = REPLY_CPIN;
+				puts ("Parcer: REPLY_CPIN\r\n");
 			}
 			else {
 				reply = REPLY_ERROR;
 			}
-
 			_DEBUG(2, "--- CPIN --- \r\n");
 		}
 
 		///CSQ
 		if (Len >= 27 && strncmp((const char*)(buffer + Len - 19), "+CSQ:", 5) == 0) {
 			reply = REPLY_CSQ;
-
+			puts ("Parcer: REPLY_CSQ\r\n");
 			_DEBUG(2, "--- CSQ --- %s", buffer);
 		}
 
@@ -158,6 +184,7 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len) {
 		if (Len >= 31 && strncmp((const char*)(buffer + Len - 19), "+CGREG:", 7) == 0) {
 			if (strstr((const char*)buffer, "0,1") != NULL || strstr((const char*)buffer, "0,5") != NULL) {
 				reply = REPLY_CGREG;
+				puts ("Parcer: REPLY_CGREG\r\n");
 			}
 			_DEBUG(2, "--- CGREG --- \r\n");
 		}
@@ -175,6 +202,46 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len) {
 		else if (Len >= 16 && strstr((const char*)buffer, "+NETCLOSE: 0") != NULL) {
 			printf("---- NETCLOSE --- %c\r\n", buffer[Len - 3]);
 			reply = REPLY_NETCLOSE;
+		}
+
+
+		///CFUN
+		if ( strstr((const char *) buffer, "+SIMCARD: NOT AVAILABLE")!=NULL )
+		{
+			reply = REPLY_INCFUN;
+		}
+
+		else if ( strstr((const char *)buffer, "PB DONE")!=NULL )
+		{
+			reply = REPLY_OUTCFUN;
+		}
+
+		///CTZU
+		if (Len >= 27 && strstr ((const char*)buffer, "+CTZU: ") != NULL) {
+			if (buffer[Len - 9] == '1') {
+				reply = REPLY_TIME_UPDATE_AUTO;
+			} else {
+				reply = REPLY_NO_TIME_UPDATE;
+			}
+		}
+
+		///CTZU=1
+		if (strcmp ((const char*)buffer, "AT+CTZU=1") == 0 && strncmp((const char*)(buffer + Len - 4), "OK", 2) == 0) {
+			reply = REPLY_TIME_UPDATE_ENABLED;
+		}
+
+		///CCLK
+
+		if (strstr ((const char *)buffer, "+CCLK: ") != NULL && strncmp((const char*)(buffer + Len - 4), "OK", 2) == 0) {
+
+			sDate.Year = dateTimeStrToINt (buffer + Len - 29);
+			sDate.Month = dateTimeStrToINt(buffer + Len - 29 + 3);
+			sDate.Date = dateTimeStrToINt(buffer + Len - 29 + 6);
+			sTime.Hours = dateTimeStrToINt(buffer + Len - 29 + 9);
+			sTime.Minutes = dateTimeStrToINt(buffer + Len - 29 +12);
+			sTime.Seconds = dateTimeStrToINt(buffer + Len - 29 + 15);
+
+			reply = REPLY_DATE_TIME;
 		}
 
 		///CIPOPEN
@@ -210,13 +277,11 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len) {
 			_DEBUG(2, "CIPSEND\r\n");
 			reply = REPLY_SEND_DONE;
 		}
-
-		///
+		/// +IPCLOSE
 		if (Len >= 13 && strstr((const char*)buffer, "+IPCLOSE: 0,1") != NULL) {
 			_DEBUG(3, "REPLY_CIPCLOSE\r\n");
 			reply = REPLY_CIPCLOSE;
 		}
-
 	}
 
 	else if (Len >= 40 && buffer[Len - 1] == '\n'){
@@ -237,43 +302,108 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len) {
 
 uint8_t simcomInit (void) {
 
-	if (simcomExecuteCmd(cmds[AT]) != REPLY_OK) {
-		puts("AT not response\r\n");
-		osDelay(5000);
-		return INIT_SIM_FAIL;
-	} else {
-		puts ("AT is works!\r\n");
-	}
+	switch (simcomHandler.initStatus) {
+	case NOT_INITIALIZED:
+		testResponse = simcomExecuteCmd(cmds[AT]);
+		if (testResponse != REPLY_OK) {
+			puts ("CMD AT FAILED\r\n");
+			return INIT_SIM_FAIL;
+		}
+		osDelay(100);
+		printf ("Response: %d\r\n", testResponse);
 
-	if (simcomExecuteCmd(cmds[CHECK_SIM]) != REPLY_CPIN) {
-		osDelay(1000);
-		puts ("CPIN error, CFUN = 0\r\n");
-		return INIT_SIM_FAIL;
-	}
+		testResponse = simcomExecuteCmd(cmds[CTZU]);
+		if (testResponse == REPLY_NO_TIME_UPDATE) {
+			osDelay(100);
+			testResponse = simcomExecuteCmd(cmds[CTZU_ENABLE]);
+			osDelay(100);
+			testResponse = simcomExecuteCmd(cmds[INCFUN]);
+			if (testResponse == REPLY_INCFUN) {
+				osDelay(6000);
+				testResponse = simcomExecuteCmd(cmds[OUTCFUN]);
+			}
+		}
+		osDelay(100);
 
-	if (simcomExecuteCmd(cmds[CSQ]) != REPLY_CSQ){
-		puts("Signal quality ERROR. Trying to reconnect\r\n");
-		simcomExecuteCmd(cmds[INCFUN]);
-		osDelay(6000);
-		simcomExecuteCmd(cmds[OUTCFUN]);
-	}
+		testResponse = simcomExecuteCmd(cmds[CCLK]);
+		if (testResponse == REPLY_DATE_TIME) {
+			HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+			HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+			osDelay(100);
+		}
 
-	if (simcomExecuteCmd(cmds[CGREG]) != REPLY_CGREG){
-		puts ("Not registerd\r\n");
-		return INIT_SIM_FAIL;
+		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+		testResponse = simcomExecuteCmd(cmds[CHECK_SIM]);
+		if (testResponse != REPLY_CPIN) {
+			puts ("CMD CPIN FAILED\r\n");
+			return INIT_SIM_FAIL;
+		}
+		osDelay(100);
+		printf ("Response: %d\r\n", testResponse);
+
+		testResponse = simcomExecuteCmd(cmds[CSQ]);
+		if (testResponse != REPLY_CSQ) {
+			puts ("CMD CSQ FAILED\r\n");
+			return INIT_SIM_FAIL;
+		}
+		osDelay(100);
+		printf ("Response: %d\r\n", testResponse);
+
+		testResponse = simcomExecuteCmd(cmds[CGREG]);
+		if (testResponse != REPLY_CGREG) {
+			puts ("CMD CGREG FAILED\r\n");
+			return INIT_SIM_FAIL;
+		}
+		osDelay(100);
+		printf ("Response: %d\r\n", testResponse);
+
+		testResponse = simcomOpenNet();
+		if (testResponse != REPLY_NETOPEN) {
+			puts ("CMD NETOPEN FAILED\r\n");
+//			return INIT_SIM_FAIL;
+		} else {
+			puts ("CMD NETOPEN DONE\r\n");
+		}
+		osDelay(100);
+		printf ("Response: %d\r\n", testResponse);
+
+		testResponse = simcomSetServer(SERVER_ADDR, SERVER_PORT, 500, 5);
+		if (testResponse != REPLY_CIPOPEN) {
+			puts ("CIPOPEN FAILED\r\n");
+//			return INIT_SIM_FAIL;
+		} else {
+			puts ("----------Connected to server-------------\r\n");
+		}
+		osDelay(100);
+		printf ("Response: %d\r\n", testResponse);
+
+
+
+//		puts ("\r\nSIM7600 Initialization done\r\n");
+
+		simcomHandler.initStatus = INITIALIZED;
+		break;
+	case INITIALIZED:
+		break;
 	}
 	return INIT_SIM_DONE;
 }
 
 
-void parcer(void const * argument){
+void parcerTask(void const * argument){
 
-	osEvent event;
+	simcomRxType simcomData = {0};
+	uint8_t tempResponse = 0;
 
-	event = osSignalWait(0x01, osWaitForever);
-	if (event.status == osEventSignal) {
-		if (event.value.v == 0x01){
+	for (;;){
+		if (xQueueReceive(qSimcomHandle, (simcomRxType*) &simcomData, osWaitForever) == pdPASS) {
 
+			tempResponse = simcomParcer(simcomData.simcomRxBuf, simcomData.simcomRxLen);
+			if (tempResponse != 0) {
+				osMessagePut(simRespMessageHandle, (uint32_t) tempResponse, 100);
+			}
 		}
 	}
 }

@@ -17,8 +17,8 @@
 
 #define 	INIT_SIM_DONE			0
 #define 	INIT_SIM_FAIL			1
-#define 	SERVER_ADDR				"120.77.213.80"
-#define 	SERVER_PORT				3099
+#define 	SERVER_ADDR				"158.160.51.94"
+#define 	SERVER_PORT				8008
 
 #define REPLY_NONE						0
 #define REPLY_OK						1
@@ -40,6 +40,10 @@
 #define REPLY_SENDERROR					16
 #define REPLY_REVER						17
 #define REPLY_TIMEOUT					18
+#define REPLY_NO_TIME_UPDATE			19
+#define REPLY_TIME_UPDATE_AUTO			20
+#define REPLY_TIME_UPDATE_ENABLED		21
+#define REPLY_DATE_TIME					22
 
 typedef uint8_t commandId_t;
 
@@ -61,8 +65,20 @@ typedef struct{
 
 }simcomRxType;
 
+typedef enum {
+	NOT_INITIALIZED,
+	INITIALIZED
+}simcomInitStatus;
+
+typedef struct _simcom_t {
+	simcomInitStatus initStatus;
+}simcom_t;
+
+
 
 extern commandId_t commandId_reply;
+
+extern simcom_t simcomHandler;
 
 
 enum {
@@ -74,8 +90,12 @@ enum {
 	CIPCLOSE,
 	NETCLOSE,
 	INCFUN,
-	OUTCFUN
+	OUTCFUN,
+	CTZU,
+	CTZU_ENABLE,
+	CCLK
 };
+
 
 typedef struct simcom_cmd_struct
 {
@@ -88,11 +108,12 @@ typedef struct simcom_cmd_struct
 }simcom_cmd_t;
 
 
-extern simcom_cmd_t cmds[];
+extern const simcom_cmd_t cmds[];
 //extern uint8_t simcomRxBuffer[RX_BUFFER_SIZE];
 extern simcomRxType simcomRxData;
 
 uint8_t simcomInit (void);
+int8_t simcomExecuteCmd(simcom_cmd_t cmd);
 
 
 #endif /* INC_SIM7600_H_ */

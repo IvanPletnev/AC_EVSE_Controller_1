@@ -49,6 +49,8 @@ CAN_HandleTypeDef hcan2;
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
 
+RTC_HandleTypeDef hrtc;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim8;
 TIM_HandleTypeDef htim11;
@@ -61,14 +63,21 @@ UART_HandleTypeDef huart3;
 UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 osThreadId defaultTaskHandle;
-osThreadId parcerTaskHandle;
+osThreadId parcerHandle;
 osMessageQId simRespMessageHandle;
 /* USER CODE BEGIN PV */
 QueueHandle_t qSimcomHandle;
 uint8_t qSimcomBuffer[ MAIL_SIZE * sizeof( simcomRxType ) ];
 StaticQueue_t qSimcomQueueBuffer;
+
+RTC_TimeTypeDef sTime = {0};
+RTC_DateTypeDef sDate = {0};
+
+int8_t testResponse = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -89,8 +98,9 @@ static void MX_TIM8_Init(void);
 static void MX_TIM11_Init(void);
 static void MX_TIM12_Init(void);
 static void MX_USART6_UART_Init(void);
+static void MX_RTC_Init(void);
 void StartDefaultTask(void const * argument);
-extern void parcer(void const * argument);
+extern void parcerTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -144,6 +154,7 @@ int main(void)
   MX_TIM11_Init();
   MX_TIM12_Init();
   MX_USART6_UART_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1, simcomRxData.simcomRxBuf, RX_BUFFER_SIZE);
   /* USER CODE END 2 */
@@ -162,7 +173,7 @@ int main(void)
 
   /* Create the queue(s) */
   /* definition and creation of simRespMessage */
-  osMessageQDef(simRespMessage, 8, uint16_t);
+  osMessageQDef(simRespMessage, 32, uint32_t);
   simRespMessageHandle = osMessageCreate(osMessageQ(simRespMessage), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -172,12 +183,12 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 512);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of parcerTask */
-  osThreadDef(parcerTask, parcer, osPriorityNormal, 0, 256);
-  parcerTaskHandle = osThreadCreate(osThread(parcerTask), NULL);
+  /* definition and creation of parcer */
+  osThreadDef(parcer, parcerTask, osPriorityNormal, 0, 512);
+  parcerHandle = osThreadCreate(osThread(parcer), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
 	/* add threads, ... */
@@ -216,6 +227,7 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
@@ -461,6 +473,69 @@ static void MX_I2C3_Init(void)
   /* USER CODE BEGIN I2C3_Init 2 */
 
   /* USER CODE END I2C3_Init 2 */
+
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 124;
+  hrtc.Init.SynchPrediv = 7999;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date
+  */
+  sTime.Hours = 11;
+  sTime.Minutes = 51;
+  sTime.Seconds = 0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_TUESDAY;
+  sDate.Month = RTC_MONTH_DECEMBER;
+  sDate.Date = 27;
+  sDate.Year = 22;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
 
 }
 
@@ -819,8 +894,15 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
@@ -889,7 +971,11 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+int _write(int file, char *ptr, int len)
+{
+	HAL_UART_Transmit(&huart2, (const uint8_t *) ptr, len, 100);
+	return len;
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -903,9 +989,14 @@ void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
 
+	osDelay(1000);
+	simcomInit();
+
 	/* Infinite loop */
 	for (;;) {
-		osDelay(1);
+		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+		osDelay(10000);
 	}
   /* USER CODE END 5 */
 }
@@ -921,12 +1012,17 @@ void StartDefaultTask(void const * argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
+	static uint16_t counter = 0;
 
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM6) {
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
+  if (counter++ > 999){
+	  HAL_GPIO_TogglePin(STATUS_LED1_GPIO_Port, STATUS_LED1_Pin);
+	  counter = 0;
+  }
 
   /* USER CODE END Callback 1 */
 }
