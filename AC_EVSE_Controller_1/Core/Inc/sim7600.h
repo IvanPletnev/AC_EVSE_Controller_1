@@ -17,8 +17,9 @@
 
 #define 	INIT_SIM_DONE			0
 #define 	INIT_SIM_FAIL			1
-#define 	SERVER_ADDR				"158.160.51.94"
-#define 	SERVER_PORT				8008
+#define 	SERVER_ADDR				"mos.ocpp.test.intermb.ru"
+#define 	WS_SERVER_ADDR			"mos.ocpp.test.intermb.ru"
+#define 	SERVER_PORT				80
 
 #define REPLY_NONE						0
 #define REPLY_OK						1
@@ -44,6 +45,10 @@
 #define REPLY_TIME_UPDATE_AUTO			20
 #define REPLY_TIME_UPDATE_ENABLED		21
 #define REPLY_DATE_TIME					22
+#define REPLY_CIPMODE					23
+#define REPLY_CIPMODE_OFF				24
+#define REPLY_CIPOPEN_TRANSPARENT		25
+#define REPLY_TRANSPARENT_OFF			26
 
 typedef uint8_t commandId_t;
 
@@ -51,7 +56,7 @@ typedef uint8_t commandId_t;
 
 //#define UART_RECEIVE_LEN  			128  	//�����������ֽ��� 128
 
-#define 	RX_BUFFER_SIZE			128
+#define 	RX_BUFFER_SIZE			1024
 #define 	USART_DMA_SENDING 		1//发送未完成
 #define 	USART_DMA_SENDOVER 		0//发送完成
 
@@ -63,22 +68,43 @@ typedef struct{
 	uint8_t	simcomRxBuf[RX_BUFFER_SIZE];     //���ջ���,���USART_REC_LEN���ֽ�.
 	uint16_t simcomRxLen;       //�������ݳ���
 
-}simcomRxType;
+}simcomRx_t;
 
 typedef enum {
 	NOT_INITIALIZED,
-	INITIALIZED
+	INITIALIZED,
 }simcomInitStatus;
+typedef enum {
+	NOT_TRANSPARENT_MODE,
+	TRANSPARENT_MODE
+}transferMode_t;
+
+typedef enum {
+	NET_CLOSED,
+	NET_OPENED,
+}simcomNetStatus;
+
+typedef enum {
+	SERVER_DISCONNECTED,
+	SERVER_CONNECTED
+}simcomServerStatus;
 
 typedef struct _simcom_t {
+
 	simcomInitStatus initStatus;
+	simcomNetStatus netStatus;
+	simcomServerStatus serverStatus;
+	simcomRx_t simcomRxData;
+	transferMode_t transferMode;
+	uint8_t initState;
+
 }simcom_t;
 
 
 
 extern commandId_t commandId_reply;
 
-extern simcom_t simcomHandler;
+extern volatile simcom_t simcomHandler;
 
 
 enum {
@@ -93,7 +119,8 @@ enum {
 	OUTCFUN,
 	CTZU,
 	CTZU_ENABLE,
-	CCLK
+	CCLK,
+	CIPMODE
 };
 
 
@@ -110,7 +137,8 @@ typedef struct simcom_cmd_struct
 
 extern const simcom_cmd_t cmds[];
 //extern uint8_t simcomRxBuffer[RX_BUFFER_SIZE];
-extern simcomRxType simcomRxData;
+extern simcomRx_t simcomRxData;
+extern uint32_t lTime;
 
 uint8_t simcomInit (void);
 int8_t simcomExecuteCmd(simcom_cmd_t cmd);

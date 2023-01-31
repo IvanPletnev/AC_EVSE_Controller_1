@@ -23,9 +23,16 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sim7600.h"
+#include "websocket.h"
+#include <time.h>
+#include <stdlib.h>
+#include "ocpp.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+typedef StaticTask_t osStaticThreadDef_t;
+typedef StaticQueue_t osStaticMessageQDef_t;
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
@@ -51,8 +58,11 @@ I2C_HandleTypeDef hi2c3;
 
 RTC_HandleTypeDef hrtc;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim8;
+TIM_HandleTypeDef htim10;
 TIM_HandleTypeDef htim11;
 TIM_HandleTypeDef htim12;
 
@@ -66,16 +76,78 @@ DMA_HandleTypeDef hdma_usart1_tx;
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
-osThreadId defaultTaskHandle;
-osThreadId parcerHandle;
-osMessageQId simRespMessageHandle;
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for parcer */
+osThreadId_t parcerHandle;
+const osThreadAttr_t parcer_attributes = {
+  .name = "parcer",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for ocppTx */
+osThreadId_t ocppTxHandle;
+uint32_t ocppTxBuffer[ 512 ];
+osStaticThreadDef_t ocppTxControlBlock;
+const osThreadAttr_t ocppTx_attributes = {
+  .name = "ocppTx",
+  .cb_mem = &ocppTxControlBlock,
+  .cb_size = sizeof(ocppTxControlBlock),
+  .stack_mem = &ocppTxBuffer[0],
+  .stack_size = sizeof(ocppTxBuffer),
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for ocpp */
+osThreadId_t ocppHandle;
+const osThreadAttr_t ocpp_attributes = {
+  .name = "ocpp",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for uartTx */
+osMessageQueueId_t uartTxHandle;
+uint8_t uartTxBuffer[ 4 * sizeof( uartTxData_t ) ];
+osStaticMessageQDef_t uartTxControlBlock;
+const osMessageQueueAttr_t uartTx_attributes = {
+  .name = "uartTx",
+  .cb_mem = &uartTxControlBlock,
+  .cb_size = sizeof(uartTxControlBlock),
+  .mq_mem = &uartTxBuffer,
+  .mq_size = sizeof(uartTxBuffer)
+};
+/* Definitions for qSimcomRx */
+osMessageQueueId_t qSimcomRxHandle;
+uint8_t qSimcomBuffer[ 4 * sizeof( simcomRx_t ) ];
+osStaticMessageQDef_t qSimcomControlBlock;
+const osMessageQueueAttr_t qSimcomRx_attributes = {
+  .name = "qSimcomRx",
+  .cb_mem = &qSimcomControlBlock,
+  .cb_size = sizeof(qSimcomControlBlock),
+  .mq_mem = &qSimcomBuffer,
+  .mq_size = sizeof(qSimcomBuffer)
+};
+/* Definitions for simRespMessage */
+osMessageQueueId_t simRespMessageHandle;
+uint8_t simRespMessageBuffer[ 16 * sizeof( uint32_t ) ];
+osStaticMessageQDef_t simRespMessageControlBlock;
+const osMessageQueueAttr_t simRespMessage_attributes = {
+  .name = "simRespMessage",
+  .cb_mem = &simRespMessageControlBlock,
+  .cb_size = sizeof(simRespMessageControlBlock),
+  .mq_mem = &simRespMessageBuffer,
+  .mq_size = sizeof(simRespMessageBuffer)
+};
 /* USER CODE BEGIN PV */
-QueueHandle_t qSimcomHandle;
-uint8_t qSimcomBuffer[ MAIL_SIZE * sizeof( simcomRxType ) ];
-StaticQueue_t qSimcomQueueBuffer;
 
 RTC_TimeTypeDef sTime = {0};
 RTC_DateTypeDef sDate = {0};
+volatile unsigned long ulHighFrequencyTimerTicks;
+volatile uint16_t secCounter = 0;
 
 int8_t testResponse = 0;
 /* USER CODE END PV */
@@ -99,8 +171,13 @@ static void MX_TIM11_Init(void);
 static void MX_TIM12_Init(void);
 static void MX_USART6_UART_Init(void);
 static void MX_RTC_Init(void);
-void StartDefaultTask(void const * argument);
-extern void parcerTask(void const * argument);
+static void MX_TIM1_Init(void);
+static void MX_TIM10_Init(void);
+static void MX_TIM7_Init(void);
+void StartDefaultTask(void *argument);
+extern void parcerTask(void *argument);
+extern void ocppTxTask(void *argument);
+extern void ocppTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -155,9 +232,17 @@ int main(void)
   MX_TIM12_Init();
   MX_USART6_UART_Init();
   MX_RTC_Init();
+  MX_TIM1_Init();
+  MX_TIM10_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, simcomRxData.simcomRxBuf, RX_BUFFER_SIZE);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, (uint8_t*)simcomHandler.simcomRxData.simcomRxBuf, RX_BUFFER_SIZE);
+  HAL_TIM_Base_Start(&htim10);
+  configureTimerForRunTimeStats();
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
 
   /* USER CODE BEGIN RTOS_MUTEX */
 	/* add mutexes, ... */
@@ -172,27 +257,39 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* definition and creation of simRespMessage */
-  osMessageQDef(simRespMessage, 32, uint32_t);
-  simRespMessageHandle = osMessageCreate(osMessageQ(simRespMessage), NULL);
+  /* creation of uartTx */
+  uartTxHandle = osMessageQueueNew (4, sizeof(uartTxData_t), &uartTx_attributes);
+
+  /* creation of qSimcomRx */
+  qSimcomRxHandle = osMessageQueueNew (4, sizeof(simcomRx_t), &qSimcomRx_attributes);
+
+  /* creation of simRespMessage */
+  simRespMessageHandle = osMessageQueueNew (16, sizeof(uint32_t), &simRespMessage_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
 	/* add queues, ... */
-  qSimcomHandle = xQueueCreateStatic(MAIL_SIZE, sizeof (simcomRxType), &qSimcomBuffer[0], &qSimcomQueueBuffer);
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 512);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
-  /* definition and creation of parcer */
-  osThreadDef(parcer, parcerTask, osPriorityNormal, 0, 512);
-  parcerHandle = osThreadCreate(osThread(parcer), NULL);
+  /* creation of parcer */
+  parcerHandle = osThreadNew(parcerTask, (void*)&simcomHandler, &parcer_attributes);
+
+  /* creation of ocppTx */
+  ocppTxHandle = osThreadNew(ocppTxTask, NULL, &ocppTx_attributes);
+
+  /* creation of ocpp */
+  ocppHandle = osThreadNew(ocppTask, NULL, &ocpp_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 	/* add threads, ... */
   /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
   osKernelStart();
@@ -540,6 +637,52 @@ static void MX_RTC_Init(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 65535;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -593,6 +736,44 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 83;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 99;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
   * @brief TIM8 Initialization Function
   * @param None
   * @retval None
@@ -635,6 +816,37 @@ static void MX_TIM8_Init(void)
   /* USER CODE BEGIN TIM8_Init 2 */
 
   /* USER CODE END TIM8_Init 2 */
+
+}
+
+/**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 167;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 65535;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
 
 }
 
@@ -803,7 +1015,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 460800;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -976,6 +1188,17 @@ int _write(int file, char *ptr, int len)
 	HAL_UART_Transmit(&huart2, (const uint8_t *) ptr, len, 100);
 	return len;
 }
+
+void configureTimerForRunTimeStats(void)
+{
+    ulHighFrequencyTimerTicks = 0;
+    HAL_TIM_Base_Start_IT(&htim7);
+}
+
+unsigned long getRunTimeCounterValue(void)
+{
+	return ulHighFrequencyTimerTicks;
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -985,18 +1208,28 @@ int _write(int file, char *ptr, int len)
  * @retval None
  */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void const * argument)
+void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
-	osDelay(1000);
-	simcomInit();
 
 	/* Infinite loop */
 	for (;;) {
+
+		if (connectorStatus1 == Charging) {
+			HAL_GPIO_WritePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin, GPIO_PIN_SET);
+		} else {
+			HAL_GPIO_WritePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin, GPIO_PIN_RESET);
+		}
+		if (connectorStatus2 == Charging) {
+			HAL_GPIO_WritePin(STATUS_LED3_GPIO_Port, STATUS_LED3_Pin, GPIO_PIN_SET);
+		} else {
+			HAL_GPIO_WritePin(STATUS_LED3_GPIO_Port, STATUS_LED3_Pin, GPIO_PIN_RESET);
+		}
 		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
 		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-		osDelay(10000);
+
+		osDelay(100);
 	}
   /* USER CODE END 5 */
 }
@@ -1014,15 +1247,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 0 */
 	static uint16_t counter = 0;
 
+
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM6) {
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-  if (counter++ > 999){
-	  HAL_GPIO_TogglePin(STATUS_LED1_GPIO_Port, STATUS_LED1_Pin);
-	  counter = 0;
+  if (htim->Instance == TIM6) {
+	  if (counter++ > 999){
+		  HAL_GPIO_TogglePin(STATUS_LED1_GPIO_Port, STATUS_LED1_Pin);
+		  counter = 0;
+		  secCounter++;
+	  }
+	  if (secCounter >= 10/*Heartbeat_Interval*/) {
+		  secCounter = 0;
+		  ocpp_task |= (1 << task_Heartbeat);
+	  }
   }
+
 
   /* USER CODE END Callback 1 */
 }
