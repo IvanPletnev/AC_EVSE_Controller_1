@@ -83,8 +83,11 @@ void StartTransaction(OCPP_CALL_ARGS) {
 
     	uint8_t jkey = 0;
     	uint8_t jval = 0;
+
+    	uint8_t key_num = 0;
+    	uint8_t val_num = 0;
         
-        // [3,"396be893-ba78-4a3f-975d-7de93cea5f29",{"idTagInfo":{"status":"Accepted"},"transactionId":5101}]
+        // [3,"396be893-ba78-4a3f-975d-7de93cea5f29",{"idTagInfo":{"status":"Accepted","expire":"13415146"},"transactionId":5101}]
         if (strcmp((char *)buf + tok[2].start, (const char *)&ID_StartTransaction) == 0) {
             
             int32_t new_transaction_id = 0;
@@ -98,8 +101,9 @@ void StartTransaction(OCPP_CALL_ARGS) {
                 const uint8_t *key_ptr = buf + tok[ikey].start;
                 const uint8_t *val_ptr = buf + tok[ival].start;
                 
+                key_num = ikey;
+                val_num = ival;
 
-                
                 if (tok[ikey].type == JSMN_STRING && tok[ival].type == JSMN_OBJECT) {
                     
                     if (strcmp((const char *)key_ptr, "idTagInfo") == 0) {
@@ -109,6 +113,8 @@ void StartTransaction(OCPP_CALL_ARGS) {
                         for (uint8_t ay = 0; ay < tok[ival].size; ++ay) {
                             jkey = ay*2 + ival + 1; // ikey
                             jval = jkey + 1;
+                            key_num = jkey + tok[ival].size * 2;
+                            val_num = key_num + 1;
                             set_zero(buf, &tok[jkey]);
                             set_zero(buf, &tok[jval]);
                             const uint8_t *skey_ptr = buf + tok[jkey].start;
@@ -146,11 +152,11 @@ void StartTransaction(OCPP_CALL_ARGS) {
                         }
                     }
                 }
-                if (tok[jkey+2].type == JSMN_STRING && tok[jval+2].type == JSMN_PRIMITIVE) {
-                    set_zero(buf, &tok[jkey+2]);
-                    set_zero(buf, &tok[jval+2]);
-                    if (strcmp((const char *)(buf + tok[jkey+2].start), "transactionId") == 0) {
-                        new_transaction_id = atol((const char *)(buf + tok[jval+2].start));
+                if (tok[key_num].type == JSMN_STRING && tok[val_num].type == JSMN_PRIMITIVE) {
+                    set_zero(buf, &tok[key_num]);
+                    set_zero(buf, &tok[val_num]);
+                    if (strcmp((const char *)(buf + tok[key_num].start), "transactionId") == 0) {
+                        new_transaction_id = atol((const char *)(buf + tok[val_num].start));
                         transactionData[getCurrentConnector()].transactionId = new_transaction_id;
                         printf("**new_transaction_id = %lu\n", new_transaction_id);
                     }
