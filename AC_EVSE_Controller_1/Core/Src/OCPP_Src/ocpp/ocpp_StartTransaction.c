@@ -53,6 +53,7 @@ void StartTransaction(OCPP_CALL_ARGS) {
     uint8_t connector = 0;
 
     if (call == ocpp_call_req) {
+
     	ringBufferInit(&ringBuffer);
     	memset((uint8_t*)&ringBuffer.buffer, 0, RINGBUFFER_SIZE);
         MakeUUID((uint8_t *)&ID_StartTransaction);
@@ -107,9 +108,10 @@ void StartTransaction(OCPP_CALL_ARGS) {
                 if (tok[ikey].type == JSMN_STRING && tok[ival].type == JSMN_OBJECT) {
                     
                     if (strcmp((const char *)key_ptr, "idTagInfo") == 0) {
-                         new_transaction_id = atol((const char*)val_ptr);
+                        new_transaction_id = atol((const char*)val_ptr);
                         Tag_AuthorizationStatus_t   new_AuthStatus = Auth_Unknown;
                         uint32_t                    new_expiryDate = 0;
+
                         for (uint8_t ay = 0; ay < tok[ival].size; ++ay) {
                             jkey = ay*2 + ival + 1; // ikey
                             jval = jkey + 1;
@@ -119,8 +121,8 @@ void StartTransaction(OCPP_CALL_ARGS) {
                             set_zero(buf, &tok[jval]);
                             const uint8_t *skey_ptr = buf + tok[jkey].start;
                             const uint8_t *sval_ptr = buf + tok[jval].start;
+
                             if (tok[jkey].type == JSMN_STRING && tok[jval].type == JSMN_STRING) {
-                                
                                 if (strcmp((const char *)skey_ptr, "status") == 0) {
                                     if (strcmp((const char *)sval_ptr, "Accepted") == 0) {
                                         new_AuthStatus = Auth_Accepted;
@@ -139,7 +141,6 @@ void StartTransaction(OCPP_CALL_ARGS) {
                                         new_AuthStatus = Auth_ConcurrentTx;
                                     }
                                 }
-                                
                                 if (strcmp((const char *)skey_ptr, "expiryDate") == 0) {
                                     new_expiryDate = Load_UnixTime(sval_ptr);
                                     printf ("Expiry date - \"%s\"\r\n", sval_ptr);
