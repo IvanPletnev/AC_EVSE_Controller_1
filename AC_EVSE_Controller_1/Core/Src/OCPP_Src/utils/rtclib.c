@@ -44,8 +44,8 @@
   needed. Omitting it avoids an incompatibility with Paul Stoffregen's Time
   library. C.f. https://github.com/adafruit/RTClib/issues/114
 */
-const uint8_t daysInMonth[]  = {31, 28, 31, 30, 31, 30,
-                                       31, 31, 30, 31, 30};
+const uint8_t daysInMonth[]  = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30};
+const uint8_t daysInMonthArray[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 /**************************************************************************/
 /*!

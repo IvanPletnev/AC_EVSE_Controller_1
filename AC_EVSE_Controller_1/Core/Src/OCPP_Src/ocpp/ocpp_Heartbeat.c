@@ -48,8 +48,8 @@ void Heartbeat(OCPP_CALL_ARGS) {
         put (&ringBuffer, (const uint8_t *)PSTR_Heartbeat, strlen (PSTR_Heartbeat));
         put (&ringBuffer, (const uint8_t *)PSTR_Obj_Start, strlen (PSTR_Obj_Start));
         put (&ringBuffer, (const uint8_t *)PSTR_Obj_End, strlen (PSTR_Obj_End));
-        puts ((const char*)ringBuffer.buffer);
-        puts("\r\n");
+//        puts ((const char*)ringBuffer.buffer);
+//        puts("\r\n");
 
         ws_send((char *)ringBuffer.buffer);
 

@@ -37,9 +37,39 @@ const char       str_UUID[]    = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 wsHandler_t wsOcppHandler = {0};
 
 extern osMessageQId uartTxHandle;
+extern volatile uint16_t pingPongCounter;
 
+
+int wsSendPing (const char *strdata) {
+
+	uint8_t opCode = 0;
+	uint8_t mask[4];
+	uint8_t payloadLen = 0;
+	uint8_t frameSize = 0;
+	uint8_t data[20] = {0};
+	uint8_t payloadOffset = 6;
+	uint8_t i = 0;
+
+	opCode = 0x89;
+	for (i = 0; i < 4; i++) {
+		mask[i] = rand () % 256;
+	}
+
+	payloadLen = strlen(strdata);
+	frameSize = 6 + payloadLen;
+	data[0] = opCode;
+	data[1] = payloadLen | 0x80;
+	memcpy ((uint8_t*)data + 2, (uint8_t*)mask, 4);
+	memcpy ((uint8_t*) data + payloadOffset, (const char*)strdata, strlen(strdata));
+	for (i = 0; i < strlen (strdata); i++) {
+		data [payloadOffset + i] ^= mask[i % 4] & 0xff;
+	}
+	uartTxDataQueueSend((uint8_t*)data, frameSize);
+	return 1;
+}
 
 int ws_send(char *strdata){
+
 	unsigned char mask[4];
 	unsigned long long payload_len;
 	unsigned char finNopcode;
@@ -98,6 +128,7 @@ int ws_send(char *strdata){
 
 	uartTxDataQueueSend((uint8_t*)data, frame_size);
 	secCounter = 0;
+    pingPongCounter = 0;
 
 	vPortFree((char *)data);
 

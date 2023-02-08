@@ -331,8 +331,6 @@ void RemoteStartTransaction(OCPP_CALL_ARGS) {
 		ws_send((char*) ringBuffer.buffer);
 		ocpp_task |= (1 << task_StartTransaction);
 		osDelay(10);
-        printf("\nconf RemoteStartTransaction\n");
-
     }
 }
 
@@ -493,6 +491,7 @@ void TriggerMessage(OCPP_CALL_ARGS) {
 }
 
 void UnlockConnector(OCPP_CALL_ARGS) {
+
 	uint8_t tempBuf[128];
 	int len = 0;
 
@@ -574,11 +573,11 @@ void FirmwareStatusNotification(OCPP_CALL_ARGS) {
     }
 }
 
-void MeterValues(OCPP_CALL_ARGS) {
-    LOGGING( printf("\nMeterValues\n"); )
-    if (call == ocpp_call_conf) {
-    }
-}
+//void MeterValues(OCPP_CALL_ARGS) {
+//    LOGGING( printf("\nMeterValues\n"); )
+//    if (call == ocpp_call_conf) {
+//    }
+//}
 
 //-------------------------------------------------------------------------
 
@@ -704,7 +703,7 @@ void Ocpp_CLIENT_RECEIVE(const uint8_t *buf, const uint16_t len) {
                     } else if (strcmp( str_in, PSTR_Heartbeat ) == 0) {
                         Heartbeat(ocpp_call_conf, buf); 
                     } else if (strcmp( str_in, PSTR_MeterValues ) == 0) {
-                        MeterValues(ocpp_call_conf, buf); 
+                        MeterValues(ocpp_call_conf, buf);
                     } else if (strcmp( str_in, PSTR_StartTransaction ) == 0) {
                         StartTransaction(ocpp_call_conf, buf); 
                     } else if (strcmp( str_in, PSTR_StatusNotification ) == 0) {
@@ -749,10 +748,6 @@ void Ocpp_ESTABLISHED() {
     ocpp_task |= (1 << task_Heartbeat);
 }
 
-//void ___Ocpp_IDLE_timer();
-
-// void Ocpp_IDLE() {}
-
 void Ocpp_IDLE() {
 
 //    printf("~");
@@ -773,6 +768,7 @@ void Ocpp_IDLE() {
 
     } else if (ocpp_task & 1 << (task_MeterValues)) {
         ocpp_task &= ~(1 << task_MeterValues);
+        MeterValues(ocpp_call_req, NULL);
 
     } else if (ocpp_task & 1 << (task_StartTransaction)) {
         ocpp_task &= ~(1 << task_StartTransaction);
@@ -813,122 +809,5 @@ void Ocpp_IDLE() {
 
     osDelay(20);
 }
-
-//static uint32_t ts_StatusNotification = 0;
-//static uint32_t ts_Authorize = 0;
-//static uint32_t prev_ut = 0;
-
-//void ___Ocpp_IDLE_timer() {
-//
-//    if (uptime_sec() % 30 == 0) {
-//        ocpp_task |= (1 << task_Heartbeat);
-//    }
-//
-//    if (uptime_sec() - ts_StatusNotification > 240) {
-//        ts_StatusNotification = uptime_sec();
-//        ocpp_task |= (1 << task_StatusNotification);
-//    }
-//
-//    if (uptime_sec() - ts_Authorize > 120) {
-//        ts_Authorize = uptime_sec();
-//        if (Last_transaction_id == 0) {
-//            ocpp_task |= (1 << task_StartTransaction);
-//        } else {
-//            ocpp_task |= (1 << task_StopTransaction);
-//        }
-//    }
-//    if (prev_ut != uptime_sec()) {
-//        prev_ut = uptime_sec();
-//        // printf(" uptime_sec=%lu\n"), prev_ut);
-//    }
-//
-//}
-
-
-
-
-
-
-
-
-
-
-// void Ocpp_init() {
-// }
-
-
-
-/*
- * 
- * 
- * 
- * req_BootNotification();
- * 
- * printf("ocpp_req_message_tail=%d\n", ocpp_req_message_tail);
- * 
- * printf("\n%s\n", ocpp_req_message);
- * 
- * ocpp_req_message_tail = 0;
- * 
- * 
- * 
- * return 0;
- * 
- * //For reset purposes, we store original argc and argv values & pointers.
- * original_argc = argc;
- * original_argv = argv;
- * 
- * int error = CP_initialize();
- * if (error > 0) {
- *    currentChargePointState         =   _CP_STATUS_FAULTED;
- *    currentChargePointErrorStatus   =   _CP_ERROR_INTERNALERROR;
- *    return error;
- * }
- * 
- * lwsl_user("LWS minimal ws client\n");
- * signal(SIGINT, sigint_handler);
- * 
- * struct lws_context_creation_info info;
- * memset(&info, 0, sizeof info);
- * lws_cmdline_option_handle_builtin(argc, argv, &info);
- * 
- * 
- * info.fd_limit_per_thread = 1 + 1 + 1;
- * info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
- * info.port = CONTEXT_PORT_NO_LISTEN; // we do not run any server
- // info.protocols = protocols;
- // 
- // ssl_connection &= ~LCCSCF_USE_SSL;
- // ssl_connection |= LCCSCF_ALLOW_SELFSIGNED;
- // ssl_connection |= LCCSCF_ALLOW_INSECURE;
- // ssl_connection |= LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
- // ssl_connection |= LCCSCF_ALLOW_EXPIRED;
- // 
- // context = lws_create_context(&info);
- // if (!context) {
- //     lwsl_err("lws init failed\n");
- //     return 1;
- // }
- // 
- //     Creamos un thread que manda un heartbeat cada 'heartbeat' microsegundos
- // pthread_t pidheartbeat;
- // struct pthread_routine_tool tool;
- // tool.wsi = mco.wsi;
- // tool.context = context;
- // 
- // pthread_create(&pidheartbeat, NULL, sendHeartbeat, &tool);
- // pthread_detach(pidheartbeat);
- // 
- // sendToDisplay("Initializing...");
- // 
- // 
- // 
- // int n = 0;
- // schedule the first client connection attempt to happen immediately
- // lws_sul_schedule(context, 0, &mco.sul, connect_client, 1);
- // while (n >= 0 && !interrupted) { n = lws_service(context, 0); }
- // lws_context_destroy(context);
- // lwsl_user("Completed\n");
- // return 0;*/
  
  

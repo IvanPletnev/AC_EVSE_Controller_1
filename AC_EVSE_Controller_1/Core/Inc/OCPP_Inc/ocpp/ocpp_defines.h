@@ -39,5 +39,5 @@
  #define METER_SERIAL_NUMBER         "_meterSerialNumber"
  #define METER_TYPE                  "_meterType"
 
-#define TOKENS 30 // TODO tune it
+#define TOKENS 20 // TODO tune it
 

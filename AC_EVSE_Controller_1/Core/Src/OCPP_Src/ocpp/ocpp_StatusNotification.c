@@ -124,7 +124,7 @@ void StatusNotification(OCPP_CALL_ARGS) {
         rtc_t rtc;
         getRtcTime(&hrtc, &rtc);
         len =sprintf((char*)tempBuf, "\"timestamp\":\"20%02u-%02u-%02uT%02u:%02u:%02u.%03luZ\"",
-                  rtc.yOff, rtc.m, rtc.d, rtc.hh-3, rtc.mm, rtc.ss, rtc.subseconds/10);
+                  rtc.yOff, rtc.m, rtc.d, rtc.hh, rtc.mm, rtc.ss, rtc.subseconds/10);
         put (&ringBuffer, (const uint8_t *)tempBuf, len);
         put (&ringBuffer, (const uint8_t *)PSTR_Obj_End, strlen (PSTR_Obj_End));
         ringBuffer.buffer[ringBuffer.bytes_avail] = '\0';

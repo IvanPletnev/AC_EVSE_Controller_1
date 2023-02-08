@@ -65,19 +65,16 @@ void StopTransaction(OCPP_CALL_ARGS) {
         len = sprintf ((char *)tempBuf, "\"reason\":\"%s\",","Local");
         put (&ringBuffer, (const uint8_t *)tempBuf, len);
        // fprintf_P(ws_stream, PSTR("\"transactionData\":{},"));  Optional.
-        len = sprintf ((char *)tempBuf, "\"meterStop\":%d,", 360);
+        len = sprintf ((char *)tempBuf, "\"meterStop\":%lu,", powerData.energy);
         put (&ringBuffer, (const uint8_t *)tempBuf, len);
         // fprintf_P(ws_stream, PSTR("\"reservationId\":%d,"), 777);
         ocpp_print_keyP_val((const uint8_t *)"idTag", buf, true);
-        
         rtc_t rtc;
         getRtcTime(&hrtc, &rtc);
-
         len = sprintf((char *)tempBuf, "\"timestamp\":\"20%02u-%02u-%02uT%02u:%02u:%02u.%03luZ\"",
                   rtc.yOff, rtc.m, rtc.d, rtc.hh, rtc.mm, rtc.ss, rtc.subseconds);
         put (&ringBuffer, (const uint8_t *)tempBuf, len);
         put (&ringBuffer, (const uint8_t *)PSTR_Obj_End, strlen(PSTR_Obj_End));
-        
         ringBuffer.buffer[ringBuffer.bytes_avail] = '\0';
         puts ((const char*) ringBuffer.buffer);
         puts("\r\n");

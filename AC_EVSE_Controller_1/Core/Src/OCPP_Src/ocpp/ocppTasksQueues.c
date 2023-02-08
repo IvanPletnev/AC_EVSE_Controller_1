@@ -3,19 +3,21 @@
 #include "ocpp.h"
 #include "ocppTxDataTask.h"
 #include "cmsis_os2.h"
-
+#include "sim7600.h"
 
 extern UART_HandleTypeDef huart1;
 extern osMessageQueueId_t uartTxHandle;
 
+uint8_t disconnFlag = 0;
+
 uint8_t uartTxDataQueueSend (uint8_t * buf, uint16_t size) {
 
 	uartTxData_t data = {0};
+
 	taskENTER_CRITICAL();
 	memcpy((uint8_t*) data.buffer, (const uint8_t *) buf, size);
 	data.len = size;
 	taskEXIT_CRITICAL();
-
 	if (osMessageQueuePut(uartTxHandle, &data , 0, 500) == osOK){
 		return 1;
 	} else {
@@ -30,21 +32,21 @@ void ocppTxTask(void const * argument){
 	for (;;){
 		if (uart1Status == READY) {
 			if (osMessageQueueGet(uartTxHandle, (uartTxData_t *) &data, 0, osWaitForever) == osOK){
-				HAL_UART_Transmit_DMA(&huart1, (const uint8_t *)& data.buffer, data.len);
 				uart1Status = BUSY;
+				HAL_UART_Transmit_DMA(&huart1, (const uint8_t *)&data.buffer, data.len);
+				osThreadYield();
 			}
 		} else {
 			osDelay(1);
 		}
 	}
-
 }
 
 void ocppTask(void *argument){
 
 	osDelay(1000);
-	simcomInit();
-	osDelay(100);
+	simcomInit(0);
+	osDelay(200);
 	ws_handshake_request_handler();
 	wsOcppHandler.wsState = WS_HANDSHAKE_RECEIVE;
 
@@ -60,8 +62,26 @@ void ocppTask(void *argument){
 				startAuth = 0;
 				ocpp_task |= (1 << task_Authorize);
 			}
-		} else {
-			osDelay(20);
 		}
+
+		if (simcomHandler.error == CONN_CLOSED_BY_SERVER) {
+			simcomInit(10);
+			ws_handshake_request_handler();
+			wsOcppHandler.wsState = WS_HANDSHAKE_RECEIVE;
+			simcomHandler.error = ERROR_NONE;
+		}
+
+		if (disconnFlag) {
+			simcomExecuteCmd(cmds[TO_CMD]);
+			osDelay(100);
+			if (simcomExecuteCmd(cmds[CIPCLOSE]) == REPLY_CIPCLOSE) {
+				puts ("\r\nConnection closed by user\r\n");
+				simcomHandler.serverStatus = SERVER_DISCONNECTED;
+				wsOcppHandler.wsState = WS_HANDSHAKE_SEND;
+				disconnFlag = 0;
+			}
+		}
+
+		osDelay(50);
 	}
 }

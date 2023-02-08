@@ -38,6 +38,11 @@
 #include "ocpp_strings.h"
 #include "ocppTxDataTask.h"
 #include "ocpp_data.h"
+#include "power.h"
+
+
+#define PAYLOAD_LEN 256
+#define REQUEST_LEN	512
 
 extern volatile ChargePointStatus_t connectorStatus1;
 extern volatile ChargePointStatus_t connectorStatus2;

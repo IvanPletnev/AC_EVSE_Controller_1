@@ -64,11 +64,10 @@ void StartTransaction(OCPP_CALL_ARGS) {
         connector = getCurrentConnector();
         len = sprintf((char *)tempBuf, "\"connectorId\":%d,", connector);
         put (&ringBuffer, (const uint8_t *) tempBuf, len);
-        len = sprintf((char *)tempBuf, "\"meterStart\":%d,", 333);
+        len = sprintf((char *)tempBuf, "\"meterStart\":%lu,", powerData.energy);
         put (&ringBuffer, (const uint8_t *) tempBuf, len);
         // fprintf_P(ws_stream, "\"reservationId\":%d,"), 777);
         ocpp_print_keyP_val((const uint8_t *)"idTag", buf, true);
-        
         rtc_t rtc;
         getRtcTime(&hrtc, &rtc);
         len = sprintf((char *)tempBuf, "\"timestamp\":\"20%02u-%02u-%02uT%02u:%02u:%02u.%03luZ\"",
@@ -148,7 +147,7 @@ void StartTransaction(OCPP_CALL_ARGS) {
                             }
                         }
                         if (new_expiryDate && new_AuthStatus != Auth_Unknown) {
-                            printf(">> new_expiryDate=%lu new_AuthStatus=%lu\n" , new_expiryDate , (unsigned long int)new_AuthStatus);
+                            printf(">> new_expiryDate=%lu new_AuthStatus=%lu\r\n" , new_expiryDate , (unsigned long int)new_AuthStatus);
                             Last_transaction_id = new_transaction_id;
                         }
                     }
@@ -159,7 +158,7 @@ void StartTransaction(OCPP_CALL_ARGS) {
                     if (strcmp((const char *)(buf + tok[key_num].start), "transactionId") == 0) {
                         new_transaction_id = atol((const char *)(buf + tok[val_num].start));
                         transactionData[getCurrentConnector()].transactionId = new_transaction_id;
-                        printf("**new_transaction_id = %lu\n", new_transaction_id);
+                        printf("**new_transaction_id = %lu\r\n", new_transaction_id);
                     }
                 }
                 //             if (new_CP_RS == CP_Accepted) {

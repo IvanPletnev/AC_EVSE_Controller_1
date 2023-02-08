@@ -40,7 +40,7 @@ volatile c_id_string37_t ID_BootNotification;
 
 
 void BootNotification(OCPP_CALL_ARGS) {
-	uint8_t tempBuf[1024] = {0};
+	uint8_t tempBuf[256] = {0};
 	uint8_t len = 0;
 
     if (call == ocpp_call_req) {
@@ -85,9 +85,10 @@ void BootNotification(OCPP_CALL_ARGS) {
 
         put (&ringBuffer, (const uint8_t *) PSTR_Obj_End, strlen (PSTR_Obj_End));
         ringBuffer.buffer[ringBuffer.bytes_avail] = '\0';
+        puts ((const char*)ringBuffer.buffer);
+        puts ("\r\n");
 
         ws_send((char *)ringBuffer.buffer);
-
 
     } else if (call == ocpp_call_reply) {
 
@@ -114,7 +115,7 @@ void BootNotification(OCPP_CALL_ARGS) {
                         } else if (strcmp((const char *)val_ptr, "Rejected") == 0) {
                             new_CP_RS = CP_Rejected;
                         }
-                        printf ("found status=%s [%d]\n", val_ptr, new_CP_RS);
+                        printf ("found status=%s [%d]\r\n", val_ptr, new_CP_RS);
                     }
                     if (strcmp((const char *)key_ptr, "currentTime") == 0) {
                         new_time = Load_UnixTime(val_ptr);
@@ -129,8 +130,8 @@ void BootNotification(OCPP_CALL_ARGS) {
 //                if (new_time)       { unixtime_set(new_time); }
                 if (new_interval)   { Heartbeat_Interval = new_interval; }
 
-                printf("found interval=%d\n", new_interval);
-                printf("found currentTime=%lu\n", new_time);
+                printf("found interval=%d\r\n", new_interval);
+                printf("found currentTime=%lu\r\n", new_time);
             }
             ChargePoint_RegistrationStatus = new_CP_RS;
         }

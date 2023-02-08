@@ -46,6 +46,8 @@
 // Unixtime for 2000-01-01 00:00:00, useful for initialization
 #define SECONDS_FROM_1970_TO_2000   946684800
 
+#define GMT_OFFSET	3
+
 
 /**************************************************************************/
 // utility code, some of this could be exposed in the DateTime API if needed
@@ -57,6 +59,7 @@
   library. C.f. https://github.com/adafruit/RTClib/issues/114
 */
 extern const uint8_t daysInMonth[];
+extern const uint8_t daysInMonthArray[];
 
 extern RTC_HandleTypeDef hrtc;
 extern RTC_TimeTypeDef sTime;

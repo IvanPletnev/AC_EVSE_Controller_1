@@ -49,6 +49,7 @@
 #define REPLY_CIPMODE_OFF				24
 #define REPLY_CIPOPEN_TRANSPARENT		25
 #define REPLY_TRANSPARENT_OFF			26
+#define REPLY_BAUDRATE					27
 
 typedef uint8_t commandId_t;
 
@@ -89,11 +90,19 @@ typedef enum {
 	SERVER_CONNECTED
 }simcomServerStatus;
 
-typedef struct _simcom_t {
+typedef enum _simcomError {
+	ERROR_NONE,
+	CONN_CLOSED_BY_SERVER,
+	CONN_CLOSED_BY_USER,
+	MESSAGE_TIMEOUT
+}simcomError_t;
+
+typedef struct __attribute__((__packed__)) _simcom_t {
 
 	simcomInitStatus initStatus;
 	simcomNetStatus netStatus;
 	simcomServerStatus serverStatus;
+	simcomError_t error;
 	simcomRx_t simcomRxData;
 	transferMode_t transferMode;
 	uint8_t initState;
@@ -120,7 +129,9 @@ enum {
 	CTZU,
 	CTZU_ENABLE,
 	CCLK,
-	CIPMODE
+	CIPMODE,
+	TO_CMD,
+	BAUDRATE
 };
 
 
@@ -140,7 +151,7 @@ extern const simcom_cmd_t cmds[];
 extern simcomRx_t simcomRxData;
 extern uint32_t lTime;
 
-uint8_t simcomInit (void);
+uint8_t simcomInit (uint8_t state);
 int8_t simcomExecuteCmd(simcom_cmd_t cmd);
 
 

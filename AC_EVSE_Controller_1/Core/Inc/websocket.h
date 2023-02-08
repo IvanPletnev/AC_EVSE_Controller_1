@@ -18,6 +18,7 @@ typedef struct _ws_t {
 	uint8_t payload[1024];
 	uint16_t payload_len;
 	wsState_t wsState;
+	uint8_t pingPongFlag;
 }wsHandler_t;
 
 extern wsHandler_t wsOcppHandler;
@@ -27,5 +28,6 @@ uint8_t ws_handshake_receive(uint8_t* buf, uint16_t len);
 uint8_t ws_receive(char * buffer, wsHandler_t* wsData);
 uint8_t wsProcess (uint8_t * buf, uint16_t len, wsHandler_t *wsHandler);
 int ws_send(char *strdata);
+int wsSendPing (const char *strdata);
 
 #endif /* INC_WEBSOCKET_H_ */

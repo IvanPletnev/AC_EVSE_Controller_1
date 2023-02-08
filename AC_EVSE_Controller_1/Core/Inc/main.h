@@ -97,6 +97,7 @@ void Error_Handler(void);
 #define STATUS_LED2_GPIO_Port GPIOB
 #define STATUS_LED1_Pin GPIO_PIN_9
 #define STATUS_LED1_GPIO_Port GPIOB
+
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
