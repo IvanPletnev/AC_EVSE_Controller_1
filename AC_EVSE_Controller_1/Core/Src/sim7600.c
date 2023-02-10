@@ -160,30 +160,25 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len, simcom_t * simcom) {
 		reply = REPLY_SEND_START;
 
 	} else if ((Len >= 4 && buffer[Len - 2] == '\r') && (buffer[Len - 1] == '\n')) {
-//		_DEBUG(3, "len : %d\r\n", Len);
 
 		if (((strncmp((const char*)(buffer + Len - 9), "AT", 2)) == 0) && (strncmp((const char*)(buffer + Len - 4), "OK", 2) == 0)){
 
 			reply = REPLY_OK;
-//			puts ("Parcer: REPLY_OK\r\n");
 		}
 
 		else if ((Len >= 7) && (Len < 66) && (strncmp((const char*)(buffer + Len - 7), "ERROR", 5) == 0))
 						{
 			reply = REPLY_ERROR;
-//			puts ("Parcer: REPLY_ERROR\r\n");
 		}
 
 		///CPIN
 		if ((Len >= 31) && (strncmp((const char*)(buffer + Len - 20), "+CPIN:", 6) == 0)) {
 			if (strstr((const char*)buffer, "READY") != NULL) {
 				reply = REPLY_CPIN;
-//				puts ("Parcer: REPLY_CPIN\r\n");
 			}
 			else {
 				reply = REPLY_ERROR;
 			}
-//			_DEBUG(2, "--- CPIN --- \r\n");
 		}
 
 		if ((Len >= 20) && (strstr ((const char *)(buffer), "AT+IPR=460800") != NULL)) {
@@ -193,29 +188,23 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len, simcom_t * simcom) {
 		///CSQ
 		if ((Len >= 27) && (strncmp((const char*)(buffer + Len - 19), "+CSQ:", 5) == 0)) {
 			reply = REPLY_CSQ;
-//			puts ("Parcer: REPLY_CSQ\r\n");
-//			_DEBUG(2, "--- CSQ --- %s", buffer);
 		}
 
 		///CGREG
 		if ((Len >= 31) && (strncmp((const char*)(buffer + Len - 19), "+CGREG:", 7) == 0)) {
 			if ((strstr((const char*)buffer, "0,1") != NULL) || (strstr((const char*)buffer, "0,5") != NULL)) {
 				reply = REPLY_CGREG;
-//				puts ("Parcer: REPLY_CGREG\r\n");
 			}
-//			_DEBUG(2, "--- CGREG --- \r\n");
 		}
 
 		///NETOPEN
 		if ((Len >= 9) && (Len < 16) && (strstr((const char*)buffer, "+NETOPEN:") != NULL)) {
 			if (buffer[Len - 3] == '0')
 				reply = REPLY_NETOPEN;
-//			_DEBUG(2, "--- NETOPEN --- \r\n");
 		}
 
 		///NETCLOSE
 		if ((Len >= 16) && (strstr((const char*)buffer, "+NETCLOSE: 0") != NULL)) {
-//			printf("---- NETCLOSE --- %c\r\n", buffer[Len - 3]);
 			reply = REPLY_NETCLOSE;
 		}
 
@@ -280,7 +269,6 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len, simcom_t * simcom) {
 		///CIPOPEN
 		if ((Len >= 17) && (Len < 66) && (strstr((const char*)buffer, "+CIPOPEN:") != NULL)) {
 			if (buffer[Len - 3] == '0') {
-//				_DEBUG(2, "---- CIPOPEN --- \r\n");
 				reply = REPLY_CIPOPEN;
 			} else
 				reply = REPLY_ERROR;
@@ -290,7 +278,6 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len, simcom_t * simcom) {
 		else if ((Len >= 66) && (strncmp((const char*)(buffer + Len - 24), "+CIPOPEN:", 9) == 0)) {
 			if (buffer[Len - 12] == '4') {
 				reply = REPLY_CIPOPEN_ERROR;
-//				_DEBUG(2, "---- CIPOPEN_ERROR --- %c\r\n",buffer[Len - 24]);
 			} else
 				reply = REPLY_ERROR;
 		}
@@ -314,19 +301,16 @@ uint8_t simcomParcer(uint8_t *buffer, uint16_t Len, simcom_t * simcom) {
 		if ((Len >= 18) && (strstr((const char*)buffer, "+CIPCLOSE") != NULL)) {
 
 			if (buffer[Len - 3] == '0') {
-//				_DEBUG(2, "---+CIPCLOSE:---\r\n");
 				reply = REPLY_CIPCLOSE;
 			}
 		}
 
 		///CIPSEND ݷ������״̬
 		if (strstr((const char*)buffer, "+CIPSEND:") != NULL) {
-//			_DEBUG(2, "CIPSEND\r\n");
 			reply = REPLY_SEND_DONE;
 		}
 		/// +IPCLOSE
 		if ((Len >= 13) && (strstr((const char*)buffer, "+IPCLOSE: 0,1") != NULL)) {
-//			_DEBUG(3, "REPLY_CIPCLOSE\r\n");
 			reply = REPLY_CIPCLOSE;
 		}
 	}
@@ -352,7 +336,6 @@ uint8_t simcomInit (uint8_t state) {
 	static uint8_t lockFlag = 0;
 
 	switch (simcomHandler.initStatus) {
-
 	case NOT_INITIALIZED:
 
 		switch (simcomHandler.initState) {
@@ -422,7 +405,6 @@ uint8_t simcomInit (uint8_t state) {
 			HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 			osDelay(100);
 			simcomHandler.initState++;
-			lockFlag = 0;
 		case 6:
 			testResponse = simcomExecuteCmd(cmds[CHECK_SIM]);
 			if (testResponse != REPLY_CPIN) {
@@ -430,7 +412,6 @@ uint8_t simcomInit (uint8_t state) {
 				return INIT_SIM_FAIL;
 			} else if (testResponse == REPLY_CPIN) {
 				osDelay(100);
-				lockFlag = 0;
 				printf ("SIM card present. Response: %d\r\n", testResponse);
 				simcomHandler.initState++;
 			}
@@ -442,7 +423,6 @@ uint8_t simcomInit (uint8_t state) {
 			} else if (testResponse == REPLY_CGREG) {
 				printf ("CREG. Response: %d\r\n", testResponse);
 				osDelay(100);
-				lockFlag = 0;
 				simcomHandler.initState++;
 			}
 		case 8:
@@ -453,7 +433,6 @@ uint8_t simcomInit (uint8_t state) {
 			} else {
 				printf ("Transparent mode enabled. Response: %d\r\n", testResponse);
 				osDelay(100);
-				lockFlag = 0;
 				simcomHandler.initState++;;
 			}
 		case 9:
@@ -464,7 +443,6 @@ uint8_t simcomInit (uint8_t state) {
 				puts ("CMD NETOPEN DONE\r\n");
 				simcomHandler.netStatus = NET_OPENED;
 				osDelay(100);
-				lockFlag = 0;
 				printf ("\r\nSocket has been open. Response: %d\r\n", testResponse);
 				simcomHandler.initState++;
 			}
@@ -479,7 +457,6 @@ uint8_t simcomInit (uint8_t state) {
 				simcomHandler.error = ERROR_NONE;
 				puts ("\r\n-------------Connected to server-------------\r\n");
 				osDelay(100);
-				lockFlag = 0;
 				simcomHandler.initStatus = INITIALIZED;
 			}
 		}
@@ -521,7 +498,6 @@ void parcerTask(void const *argument) {
 					simcom->serverStatus = SERVER_DISCONNECTED;
 					simcom->error = CONN_CLOSED_BY_SERVER;
 					wsOcppHandler.wsState = WS_HANDSHAKE_SEND;
-					simcom->initStatus = NOT_INITIALIZED;
 					taskEXIT_CRITICAL();
 					puts ("\r\n ----------------Connection CLOSED by server------------------\r\n");
 				} else if (/*simcomData.simcomRxLen == 2 && */simcomData.simcomRxBuf[0] == 0x89) { //WEBSOCKET ping

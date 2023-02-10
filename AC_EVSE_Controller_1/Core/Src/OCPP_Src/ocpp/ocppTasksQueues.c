@@ -25,6 +25,19 @@ uint8_t uartTxDataQueueSend (uint8_t * buf, uint16_t size) {
 	}
 }
 
+uint8_t uartTxDataQueueSendISR (uint8_t * buf, uint16_t size) {
+
+	uartTxData_t data = {0};
+
+	memcpy((uint8_t*) data.buffer, (const uint8_t *) buf, size);
+	data.len = size;
+	if (osMessageQueuePut(uartTxHandle, &data , 0, 500) == osOK){
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
 void ocppTxTask(void const * argument){
 
 	uartTxData_t data = {0};
@@ -46,7 +59,7 @@ void ocppTask(void *argument){
 
 	osDelay(1000);
 	simcomInit(0);
-	osDelay(200);
+	osDelay(100);
 	ws_handshake_request_handler();
 	wsOcppHandler.wsState = WS_HANDSHAKE_RECEIVE;
 
@@ -65,6 +78,7 @@ void ocppTask(void *argument){
 		}
 
 		if (simcomHandler.error == CONN_CLOSED_BY_SERVER) {
+			simcomHandler.initStatus = NOT_INITIALIZED;
 			simcomInit(10);
 			ws_handshake_request_handler();
 			wsOcppHandler.wsState = WS_HANDSHAKE_RECEIVE;

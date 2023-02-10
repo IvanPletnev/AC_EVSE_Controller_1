@@ -64,7 +64,7 @@ int wsSendPing (const char *strdata) {
 	for (i = 0; i < strlen (strdata); i++) {
 		data [payloadOffset + i] ^= mask[i % 4] & 0xff;
 	}
-	uartTxDataQueueSend((uint8_t*)data, frameSize);
+	uartTxDataQueueSendISR((uint8_t*)data, frameSize);
 	return 1;
 }
 

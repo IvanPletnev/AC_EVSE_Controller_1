@@ -1230,7 +1230,6 @@ void StartDefaultTask(void *argument)
 		}
 		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
 		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
 		osDelay(50);
 	}
   /* USER CODE END 5 */
@@ -1260,22 +1259,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  HAL_GPIO_TogglePin(STATUS_LED1_GPIO_Port, STATUS_LED1_Pin);
 		  counter = 0;
 		  secCounter++;
+		  pingPongCounter++;
 		  powerData.energy += 125;
 	  }
 	  if (secCounter > (Heartbeat_Interval - 1)) {
 		  secCounter = 0;
 		  ocpp_task |= (1 << task_Heartbeat);
 	  }
-
 	  if (getConnectorStatus(getCurrentConnector()) == Charging) {
 		  if (meterValuesCounter++ > 9999) {
 			  meterValuesCounter = 0;
 			  ocpp_task |= (1 << task_MeterValues);
 		  }
 	  }
+	  if (pingPongCounter > 9) {
+		  pingPongCounter = 0;
+		  wsSendPing("Hello");
+	  }
   }
-
-
   /* USER CODE END Callback 1 */
 }
 

@@ -41,8 +41,8 @@
 #include "power.h"
 
 
-#define PAYLOAD_LEN 256
-#define REQUEST_LEN	512
+#define PAYLOAD_LEN 1024
+#define REQUEST_LEN	1024
 
 extern volatile ChargePointStatus_t connectorStatus1;
 extern volatile ChargePointStatus_t connectorStatus2;
