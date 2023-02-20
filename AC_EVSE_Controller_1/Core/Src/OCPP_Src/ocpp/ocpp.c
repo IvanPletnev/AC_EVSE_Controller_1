@@ -629,6 +629,7 @@ void Ocpp_CLIENT_RECEIVE(const uint8_t *buf, const uint16_t len) {
 
     if (r < 0) {
         printf("JSON_ERROR\n");
+        return;
     } else {
 
         if (tok[0].type == JSMN_ARRAY) {
@@ -732,7 +733,6 @@ void Ocpp_CLIENT_RECEIVE(const uint8_t *buf, const uint16_t len) {
                 // "The payload for action could not be deserialized",
                 // {"errorMsg":"Cannot deserialize value of type `java.util.ArrayList<ocpp.cs._2015._10.MeterValue>` from Object val..."}]
             }
-
         } else {
 //        	printf("JSON_NO_ARRAY\n");
         }
