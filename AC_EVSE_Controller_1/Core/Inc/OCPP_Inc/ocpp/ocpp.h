@@ -150,6 +150,6 @@ uint8_t getCurrentConnector (void);
 
 
 void Ocpp_CLIENT_CONNECTION_ERROR();
-void Ocpp_CLIENT_RECEIVE(const uint8_t* buf, const uint16_t len);
+uint8_t Ocpp_CLIENT_RECEIVE(const uint8_t* buf, const uint16_t len);
 void Ocpp_ESTABLISHED();
 void Ocpp_IDLE();

@@ -27,6 +27,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include "ocpp.h"
+#include "evse.h"
 
 /* USER CODE END Includes */
 
@@ -39,6 +40,7 @@ typedef StaticQueue_t osStaticMessageQDef_t;
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -109,6 +111,18 @@ const osThreadAttr_t ocpp_attributes = {
   .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for evse */
+osThreadId_t evseHandle;
+uint32_t evseBuffer[ 128 ];
+osStaticThreadDef_t evseControlBlock;
+const osThreadAttr_t evse_attributes = {
+  .name = "evse",
+  .cb_mem = &evseControlBlock,
+  .cb_size = sizeof(evseControlBlock),
+  .stack_mem = &evseBuffer[0],
+  .stack_size = sizeof(evseBuffer),
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for uartTx */
 osMessageQueueId_t uartTxHandle;
 uint8_t uartTxBuffer[ 4 * sizeof( uartTxData_t ) ];
@@ -142,6 +156,17 @@ const osMessageQueueAttr_t simRespMessage_attributes = {
   .mq_mem = &simRespMessageBuffer,
   .mq_size = sizeof(simRespMessageBuffer)
 };
+/* Definitions for adcQ */
+osMessageQueueId_t adcQHandle;
+uint8_t adcQBuffer[ 4 * sizeof( adcInput_t ) ];
+osStaticMessageQDef_t adcQControlBlock;
+const osMessageQueueAttr_t adcQ_attributes = {
+  .name = "adcQ",
+  .cb_mem = &adcQControlBlock,
+  .cb_size = sizeof(adcQControlBlock),
+  .mq_mem = &adcQBuffer,
+  .mq_size = sizeof(adcQBuffer)
+};
 /* USER CODE BEGIN PV */
 
 RTC_TimeTypeDef sTime = {0};
@@ -152,6 +177,8 @@ volatile uint16_t pingPongCounter = 0;
 
 volatile uint32_t queueFreeSpace = 0;
 int8_t testResponse = 0;
+
+volatile uint8_t highLowFlag = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -180,6 +207,7 @@ void StartDefaultTask(void *argument);
 extern void parcerTask(void *argument);
 extern void ocppTxTask(void *argument);
 extern void ocppTask(void *argument);
+extern void evseTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -240,6 +268,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1, (uint8_t*)simcomHandler.simcomRxData.simcomRxBuf, RX_BUFFER_SIZE);
   HAL_TIM_Base_Start(&htim10);
+  HAL_TIM_PWM_Start_IT(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_Base_Start_IT(&htim2);
   configureTimerForRunTimeStats();
   /* USER CODE END 2 */
 
@@ -268,6 +298,9 @@ int main(void)
   /* creation of simRespMessage */
   simRespMessageHandle = osMessageQueueNew (16, sizeof(uint32_t), &simRespMessage_attributes);
 
+  /* creation of adcQ */
+  adcQHandle = osMessageQueueNew (4, sizeof(adcInput_t), &adcQ_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
 	/* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -284,6 +317,9 @@ int main(void)
 
   /* creation of ocpp */
   ocppHandle = osThreadNew(ocppTask, NULL, &ocpp_attributes);
+
+  /* creation of evse */
+  evseHandle = osThreadNew(evseTask, NULL, &evse_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 	/* add threads, ... */
@@ -378,14 +414,14 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = ENABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 4;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -395,7 +431,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -703,35 +739,36 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
+  htim2.Init.Prescaler = 83;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC3REF;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 499;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
+  sConfigOC.Pulse = 0;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM2_Init 2 */
-
+  __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
 
@@ -794,9 +831,9 @@ static void MX_TIM8_Init(void)
 
   /* USER CODE END TIM8_Init 1 */
   htim8.Instance = TIM8;
-  htim8.Init.Prescaler = 0;
+  htim8.Init.Prescaler = 167;
   htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim8.Init.Period = 65535;
+  htim8.Init.Period = 19;
   htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim8.Init.RepetitionCounter = 0;
   htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -1200,7 +1237,48 @@ void configureTimerForRunTimeStats(void)
 unsigned long getRunTimeCounterValue(void)
 {
 	return ulHighFrequencyTimerTicks;
+
 }
+
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
+{
+	if (htim->Instance == TIM2) {
+		if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+			if (highLowFlag) {
+				highLowFlag = 0;
+				HAL_TIM_Base_Start_IT(&htim8);
+			}
+		}
+	}
+}
+
+
+//void averageAdcBuf (uint8_t size){
+//	uint8_t i = 0, j = 0;
+//	uint16_t tempBufLow[ADC_BUF_SIZE] = {0};
+//	uint16_t tempBufHigh[ADC_BUF_SIZE] = {0};
+//	for (i = 0; i < 4; i++){
+//		for (j = i; j < size; j += 4){
+//			tempBufLow[i] += adcBufLow[j];
+//			tempBufHigh[i] += adcBufHigh[j];
+//		}
+//		tempBufLow[i] /= (size/4);
+//		tempBufHigh[i] /= (size/4);
+//	}
+//	memcpy((uint16_t*)averagedAdcBufLow, (const uint16_t*)tempBufLow, ADC_BUF_SIZE);
+//	memcpy((uint16_t*)averagedAdcBufHigh, (const uint16_t*)tempBufHigh, ADC_BUF_SIZE);
+//}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	if (hadc->Instance == ADC1) {
+		HAL_ADC_Stop(&hadc1);
+		osMessageQueuePut(adcQHandle, &adcInputData, 0, 0);
+		HAL_GPIO_TogglePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin);
+	}
+}
+
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -1214,15 +1292,14 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
-
 	/* Infinite loop */
 	for (;;) {
 
-		if (connectorStatus1 == Charging) {
-			HAL_GPIO_WritePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin, GPIO_PIN_SET);
-		} else {
-			HAL_GPIO_WritePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin, GPIO_PIN_RESET);
-		}
+//		if (connectorStatus1 == Charging) {
+//			HAL_GPIO_WritePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin, GPIO_PIN_SET);
+//		} else {
+//			HAL_GPIO_WritePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin, GPIO_PIN_RESET);
+//		}
 		if (connectorStatus2 == Charging) {
 			HAL_GPIO_WritePin(STATUS_LED3_GPIO_Port, STATUS_LED3_Pin, GPIO_PIN_SET);
 		} else {
@@ -1248,6 +1325,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 0 */
 	static uint16_t counter = 0;
 	static uint16_t meterValuesCounter = 0;
+	static uint8_t adcCounter = 0;
 
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM6) {
@@ -1275,6 +1353,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	  if (pingPongCounter > 9) {
 		  pingPongCounter = 0;
 		  wsSendPing("Hello");
+	  }
+  }
+  if (htim->Instance == TIM2) {
+	  if (adcCounter++ == ADC_SAMPLE_PERIOD) {
+		  adcCounter = 0;
+		  highLowFlag = 1;
+		  HAL_TIM_Base_Start_IT(&htim8);
+	  }
+  }
+
+  if (htim->Instance == TIM8) {
+	  HAL_TIM_Base_Stop_IT(&htim8);
+	  __HAL_TIM_CLEAR_FLAG(&htim8, TIM_FLAG_UPDATE);
+	  __HAL_TIM_SET_COUNTER(&htim8, 0);
+	  if (highLowFlag){
+		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufHigh, 4);
+	  } else {
+		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufLow, 4);
 	  }
   }
   /* USER CODE END Callback 1 */

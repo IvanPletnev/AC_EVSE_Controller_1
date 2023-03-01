@@ -138,6 +138,7 @@ int ws_send(char *strdata){
 uint8_t ws_receive(char * buffer, wsHandler_t* wsData) {
 
     uint8_t ws_receive_err = 1;
+
     if (buffer[0] == 0x81) {
         if ((buffer[1] & 0x80) == 0x00) {
             uint16_t payloadLen = (buffer[1] & 0x7F);
@@ -146,7 +147,6 @@ uint8_t ws_receive(char * buffer, wsHandler_t* wsData) {
             if(payloadLen == 126) {
                 payloadLen = buffer[2] << 8 | buffer[3];
                 payload_offset += 2;
-//                printf("payload_length=%u\n", payloadLen);
             }
             ws_receive_err = 0; // OK
             memcpy(wsData->payload, (buffer + payload_offset), payloadLen);
@@ -155,10 +155,8 @@ uint8_t ws_receive(char * buffer, wsHandler_t* wsData) {
         	ws_receive_err = 2;
         } // FRAME MASKED
     }
-
     if (ws_receive_err) {
 //        printf("\nWsRx.buff[0] %u\n", buffer[0]);
-//        printf("\nWS_RECV ERR %u\n", ws_receive_err);
     }
     return 1;
 }
@@ -186,7 +184,6 @@ uint8_t ws_handshake_receive(uint8_t* buf, uint16_t len) {
                 }
                 if (check == WS_CHECKTABLE_COUNT) {
                     if (strcasestr((const char *)buf, str_SecWsAccept) != NULL) {
-//						ws_stream_print = ws_stream_ws_masking;
 						ws_upgrade_reply_err = 0;
 						return 1;
                     } else { ws_upgrade_reply_err = 5; } // bad WSACCEPT;
@@ -202,19 +199,4 @@ uint8_t ws_handshake_receive(uint8_t* buf, uint16_t len) {
     return 0;
 }
 
-//uint8_t wsProcess (uint8_t * buf, uint16_t len, wsHandler_t *wsHandler){
-//	switch (wsHandler->wsState) {
-//	case WS_HANDSHAKE_SEND:
-//		ws_handshake_request_handler();
-//		wsHandler->wsState = WS_HANDSHAKE_RECEIVE;
-//		break;
-//	case WS_HANDSHAKE_RECEIVE:
-//		if (ws_handshake_receive(buf, len)) {
-//			wsHandler->wsState = WS_IDLE;
-//			break;
-//	case WS_IDLE:
-//		break;
-//		}
-//	}
-//	return 1;
-//}
+

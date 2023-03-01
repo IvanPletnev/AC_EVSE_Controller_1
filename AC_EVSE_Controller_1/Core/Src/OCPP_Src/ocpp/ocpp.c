@@ -616,20 +616,24 @@ void FirmwareStatusNotification(OCPP_CALL_ARGS) {
 
 // [4,"7b437670-e231-4a82-bab7-b6042bf2d896","FormationViolation","The payload for action could not be deserialized",{"errorMsg":"Cannot deserialize value of type `java.util.ArrayList<ocpp.cs._2015._10.MeterValue>` from Object val..."}]
 
-void Ocpp_CLIENT_RECEIVE(const uint8_t *buf, const uint16_t len) {
+uint8_t Ocpp_CLIENT_RECEIVE(const uint8_t *buf, const uint16_t len) {
 //    LOGGING(
         printf("\r\nOcpp_CLIENT_RECEIVE(%u)\r\n", len);
-        printf("%.*s\r\n\r\n", len, buf);
+//        printf("%.*s\r\n\r\n", len, buf);
 //    )
 
 //    HexDump(buf, len);
-    
+    taskENTER_CRITICAL();
     jsmn_init(&p);
     int r = jsmn_parse(&p, (const char *) buf, len, tok, TOKENS);
+    taskEXIT_CRITICAL();
 
     if (r < 0) {
-        printf("JSON_ERROR\n");
-        return;
+        printf("JSON_ERROR - %d\r\n", r);
+        printf("Buffer length = %d, %.*s\r\n\r\n",len, len, buf);
+        ocpp_task |= (1 << task_Heartbeat);
+        return r;
+
     } else {
 
         if (tok[0].type == JSMN_ARRAY) {
@@ -734,9 +738,10 @@ void Ocpp_CLIENT_RECEIVE(const uint8_t *buf, const uint16_t len) {
                 // {"errorMsg":"Cannot deserialize value of type `java.util.ArrayList<ocpp.cs._2015._10.MeterValue>` from Object val..."}]
             }
         } else {
-//        	printf("JSON_NO_ARRAY\n");
+        	printf("JSON_NO_ARRAY\r\n");
         }
     }
+    return 1;
 }
 
 volatile uint16_t ocpp_task = 0;

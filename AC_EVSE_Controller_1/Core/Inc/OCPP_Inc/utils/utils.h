@@ -15,6 +15,21 @@
 
 #define RINGBUFFER_SIZE 1024
 
+#define FILTER_LEN 32
+#define CHANNELS 8
+
+typedef struct _filterType
+{
+    int16_t filterData[FILTER_LEN];    // данные фильтра
+    int32_t sum;                        // текущая сумма
+    int16_t top;                        // указатель на текущую выборку
+} filterType;      // упаковать данные
+
+// определяем масcив данных фильтра
+extern filterType filter[CHANNELS];        // как внешний
+
+int16_t filtering(int16_t input_data, filterType * flt);
+
 typedef struct {
     uint8_t  buffer [1024];
     const size_t   buffer_size;

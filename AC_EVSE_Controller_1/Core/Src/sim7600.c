@@ -502,7 +502,7 @@ void parcerTask(void const *argument) {
 					puts ("\r\n ----------------Connection CLOSED by server------------------\r\n");
 				} else if (/*simcomData.simcomRxLen == 2 && */simcomData.simcomRxBuf[0] == 0x89) { //WEBSOCKET ping
 					uartTxDataQueueSend((uint8_t*) pong, 6);
-					puts ("\r\n ----------------Websocket PING------------------\r\n");
+					//puts ("\r\n ----------------Websocket PING------------------\r\n");
 				} else if (simcomData.simcomRxBuf[0] == 0x8A) {
 					puts ("\r\n ----------------Websocket PONG------------------\r\n");
 				} else if (/*simcomData.simcomRxLen == 2 && */simcomData.simcomRxBuf[0] == 0x88) {//WEBSOCKET CLOSE
@@ -522,8 +522,13 @@ void parcerTask(void const *argument) {
 						}
 						break;
 					case WS_IDLE:
+						taskENTER_CRITICAL();
 						ws_receive((char *)simcomData.simcomRxBuf, &wsOcppHandler);
-						Ocpp_CLIENT_RECEIVE(wsOcppHandler.payload, wsOcppHandler.payload_len);
+						taskEXIT_CRITICAL();
+						int8_t err = 0;
+						if ((err = Ocpp_CLIENT_RECEIVE(wsOcppHandler.payload, wsOcppHandler.payload_len)) < 0){
+							printf ("Error = %d, Buffer - \"[%.*s]\"\r\n", err, simcomData.simcomRxLen, simcomData.simcomRxBuf);
+						}
 						break;
 					}
 				}
