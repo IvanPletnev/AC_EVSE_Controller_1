@@ -431,7 +431,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -833,7 +833,7 @@ static void MX_TIM8_Init(void)
   htim8.Instance = TIM8;
   htim8.Init.Prescaler = 167;
   htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim8.Init.Period = 19;
+  htim8.Init.Period = 999;
   htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim8.Init.RepetitionCounter = 0;
   htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -1246,7 +1246,8 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 		if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
 			if (highLowFlag) {
 				highLowFlag = 0;
-				HAL_TIM_Base_Start_IT(&htim8);
+//				HAL_TIM_Base_Start_IT(&htim8);
+				HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufLow, 4);
 			}
 		}
 	}
@@ -1273,7 +1274,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	if (hadc->Instance == ADC1) {
 		HAL_ADC_Stop(&hadc1);
-		osMessageQueuePut(adcQHandle, &adcInputData, 0, 0);
+		osMessageQueuePut(adcQHandle, (const void* )&adcInputData, 0, 0);
 		HAL_GPIO_TogglePin(STATUS_LED2_GPIO_Port, STATUS_LED2_Pin);
 	}
 }
@@ -1359,19 +1360,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	  if (adcCounter++ == ADC_SAMPLE_PERIOD) {
 		  adcCounter = 0;
 		  highLowFlag = 1;
-		  HAL_TIM_Base_Start_IT(&htim8);
+		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufHigh, 4);
 	  }
   }
 
   if (htim->Instance == TIM8) {
-	  HAL_TIM_Base_Stop_IT(&htim8);
-	  __HAL_TIM_CLEAR_FLAG(&htim8, TIM_FLAG_UPDATE);
-	  __HAL_TIM_SET_COUNTER(&htim8, 0);
-	  if (highLowFlag){
-		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufHigh, 4);
-	  } else {
-		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufLow, 4);
-	  }
+
+	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcInputData.adcBufHigh, 4);
   }
   /* USER CODE END Callback 1 */
 }

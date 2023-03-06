@@ -15,7 +15,7 @@
 
 #define RINGBUFFER_SIZE 1024
 
-#define FILTER_LEN 32
+#define FILTER_LEN 64
 #define CHANNELS 8
 
 typedef struct _filterType
