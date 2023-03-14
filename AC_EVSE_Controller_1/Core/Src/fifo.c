@@ -1,0 +1,161 @@
+
+#include "main.h"
+#include <stdlib.h>
+#include "fifo.h"
+
+fifo_t *create_fifo(const size_t size) {
+
+    uint8_t *buffer = (uint8_t *) pvPortMalloc(size+1);
+
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    fifo_t *fifo = (fifo_t *) pvPortMalloc(sizeof(fifo_t));
+
+    if (fifo == NULL) {
+        vPortFree(buffer);
+        return NULL;
+    }
+
+    fifo->buffer = buffer;
+    fifo->head = 0;
+    fifo->tail = 0;
+    fifo->free = size;
+    fifo->size = size + 1;
+
+    return fifo;
+}
+
+uint8_t fifo_clear (fifo_t * fifo, uint16_t size) {
+
+    if (fifo == NULL) {
+        return 0;
+    } else {
+        fifo->head = 0;
+        fifo->tail = 0;
+        fifo->free = size;
+        fifo->size = size + 1;
+    }
+    return 1;
+}
+
+void free_fifo(fifo_t * fifo) {
+    free(fifo->buffer);
+}
+
+size_t fifo_push_byte(fifo_t * fifo, const uint8_t byte){
+
+    //CHECK_FIFO_NULL(fifo);
+
+    // check if fifo is full
+    if ((fifo->head == (fifo->size - 1) && fifo->tail == 0)
+        || (fifo->head == (fifo->tail - 1))) {
+        return 0;
+    }
+
+    fifo->buffer[fifo->head] = byte;
+    fifo->head++;
+    fifo->free--;
+    if (fifo->head == fifo->size) {
+        fifo->head = 0;
+    }
+
+    return 1;
+}
+
+size_t fifo_push(fifo_t * fifo, uint8_t * bytes, const size_t count) {
+
+    //CHECK_FIFO_NULL(fifo);
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        if (fifo_push_byte(fifo, bytes[i]) == 0) {
+            return i;
+        }
+    }
+    return count;
+}
+
+
+uint8_t FIFO_POP_BYTE (fifo_t * fifo) {
+
+	uint8_t byte;
+
+    if (fifo->head == fifo->tail) {
+        return 0;
+    }
+
+    byte = fifo->buffer[fifo->tail];
+
+    fifo->tail++;
+    fifo->free++;
+    if (fifo->tail == fifo->size) {
+        fifo->tail = 0;
+    }
+
+    return byte;
+}
+
+size_t fifo_pop_byte(fifo_t * fifo, uint8_t * byte) {
+    //CHECK_FIFO_NULL(fifo);
+
+    // check if fifo is empty
+    if (fifo->head == fifo->tail) {
+        return 0;
+    }
+
+    *byte = fifo->buffer[fifo->tail];
+
+    fifo->tail++;
+    fifo->free++;
+
+    if (fifo->tail == fifo->size) {
+        fifo->tail = 0;
+    }
+    return 1;
+}
+
+size_t fifo_pop(fifo_t * fifo, uint8_t * bytes, size_t count) {
+    //CHECK_FIFO_NULL(fifo);
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        if (fifo_pop_byte(fifo, bytes + i) == 0) {
+            return i;
+        }
+    }
+
+    return count;
+}
+
+uint8_t fifo_check_full(fifo_t * fifo) {
+    if ((fifo->head == (fifo->size - 1) && fifo->tail == 0)
+        || (fifo->head == (fifo->tail - 1))) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+uint8_t fifo_check_empty(fifo_t * fifo) {
+    if (fifo->head == fifo->tail) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+size_t fifo_check_fill(fifo_t * fifo) {
+
+    if (fifo->head == fifo->tail) {
+        return 0;
+    } else if ((fifo->head == (fifo->size - 1) && fifo->tail == 0)
+               || (fifo->head == (fifo->tail - 1))) {
+        return fifo->size;
+    } else if (fifo->head < fifo->tail) {
+        return (fifo->head) + (fifo->size - fifo->tail);
+    } else {
+        return fifo->head - fifo->tail;
+    }
+}

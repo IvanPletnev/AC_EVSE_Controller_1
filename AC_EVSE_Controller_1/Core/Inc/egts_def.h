@@ -168,6 +168,7 @@ typedef struct {
 #pragma pack()
 /* end state service data  */
 
+/*-----------------HEADER FLAGS------------------*/
 #pragma pack(1)
 typedef struct {
     uint8_t priority :2;
@@ -186,7 +187,7 @@ typedef struct {
 } __routing_data_t;
 #pragma pack()
 
-/*-----------------HEADER------------------*/
+/*-----------------HEADER TRANSPORT------------------*/
 typedef struct {
     uint8_t protocolVersion;
     uint8_t securityKeyId;
@@ -218,6 +219,7 @@ typedef struct {
     uint8_t *pData;
 } __sub_record_t;
 
+/*-----------------RECORD HEADER------------------*/
 typedef struct {
     uint16_t recordLength;
     uint16_t recordNumber;

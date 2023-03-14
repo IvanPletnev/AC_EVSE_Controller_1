@@ -17,38 +17,39 @@
 #include "fifo.h"
 #include "revision.h"
 #include "gost_28147_89.h"
+#include "stdbool.h"
 
 //#if defined (TS083I) || defined (TS100E)
 
 // Fifo
-static __fifo_data pack_fifo;
-static __fifo_data * const fifo = &pack_fifo;
+static fifo_t pack_fifo = {0};
+static fifo_t * const fifo = &pack_fifo;
 
 static uint8_t rx_data[EGTS_MAX_SIZE_DATA];
 
-static __sub_record_t sub_record;
-static __sub_record_t * const pSub_record= &sub_record;
+static __sub_record_t sub_record = {0};
+static __sub_record_t * const pSubRecord= &sub_record;
 
-static __egts_state_t state;
+static __egts_state_t state = {0};
 static __egts_state_t * const pState = &state;
 
-static __services_frame_data_t egts_header_record;
+static __services_frame_data_t egts_header_record = {0};
 static __services_frame_data_t * const pEgts_header_record = &egts_header_record;
 
-static __header_transport_layer_t egts_header_trans_layer;
+static __header_transport_layer_t egts_header_trans_layer = {0};
 static __header_transport_layer_t * const pEgts_header_trans_layer = &egts_header_trans_layer;
 
 
 static void set_state_auth(const uint16_t state);
 static void clear_state_auth(void);
-static BOOL_T is_header_recived(void);
+static bool is_header_recived(void);
 static void fill_header(void);
-static BOOL_T is_full_pack_received(void);
-static BOOL_T is_crc_ok(void);
+static bool is_full_pack_received(void);
+static bool is_crc_ok(void);
 static void fill_record_header(void);
-static BOOL_T is_not_answer_from_server(void);
+static bool is_not_answer_from_server(void);
 static void  check_response(void);
-static BOOL_T is_buffer_not_empty(void);
+static bool is_buffer_not_empty(void);
 static void get_pack_data(void);
 static void record_response(void);
 static void auth_term_id(void);
@@ -76,38 +77,48 @@ static void send_answer(void);
 
 void egts_init(void) 
 {
-	gsm_head_set(REG_NONE);
-	memset((uint8_t*)pEgts_header_trans_layer, 0, sizeof(__header_transport_layer_t));
-	memset((uint8_t*)pEgts_header_record, 0, sizeof(__services_frame_data_t));
-	memset((uint8_t*)pState, 0, sizeof(__egts_state_t));
 	pState->link = DEV_GSM;
 	cypher_gost_init();
-	
-	create_fifo(fifo, rxData, EGTS_MAX_SIZE_DATA);
+	create_fifo(EGTS_MAX_SIZE_DATA);
 }
 
-BOOL_T egts_is_auth_none(void)
+bool egts_is_auth_none(void)
 {
     return (pState->authState != AUTH_LOGIN_NONE) ? TRUE_T : FALSE_T;
 }
 
-void handler_msg_egts(const uint8_t new_byte,  uint16_t const index) 
+void handleEgtsMsg (uint8_t* buffer, uint16_t len) {
+
+	static bool init_head = true;
+
+	if (init_head && (len >= EGTS_HEAD_MIN_LEN)) {
+		pEgts_header_trans_layer->frameDataLength = buffer[6];
+		pEgts_header_trans_layer->frameDataLength <<= 8;
+		pEgts_header_trans_layer->frameDataLength |= buffer[5];
+	}
+    if(len != ( EGTS_HEAD_MIN_LEN + pEgts_header_trans_layer->frameDataLength + sizeof(uint16_t) ) ){
+        return;
+    }
+}
+
+
+void handler_msg_egts(uint8_t* buffer, uint16_t len)
 {
-    static BOOL_T init_head = TRUE_T;
+    static bool init_head = true;
 
     if(init_head && (index >= EGTS_HEAD_MIN_LEN) ) {
-        pEgts_header_trans_layer->frameDataLength= *(get_pntr_rx_buff() + 6);
+        pEgts_header_trans_layer->frameDataLength= *(buffer + 6);
         pEgts_header_trans_layer->frameDataLength <<= 8;
-        pEgts_header_trans_layer->frameDataLength |= *(get_pntr_rx_buff() + 5);
-        init_head = FALSE_T;
+        pEgts_header_trans_layer->frameDataLength |= *(buffer + 5);
+        init_head = false;
     }
-    if(index != ( EGTS_HEAD_MIN_LEN + pEgts_header_trans_layer->frameDataLength + sizeof(uint16_t) ) ){
+    if(len != ( EGTS_HEAD_MIN_LEN + pEgts_header_trans_layer->frameDataLength + sizeof(uint16_t) ) ){
         return;
     }
 
-    FIFO_CLEAR();
-    for(uint32_t i = 0; i < ( EGTS_HEAD_MIN_LEN + pEgts_header_trans_layer->frameDataLength + sizeof(uint16_t)); i++) {
-        FIFO_PUSH_BYTE(*(get_pntr_rx_buff() + i));
+    fifo_clear(fifo, EGTS_MAX_SIZE_DATA);
+    for(uint16_t i = 0; i < ( EGTS_HEAD_MIN_LEN + pEgts_header_trans_layer->frameDataLength + sizeof(uint16_t)); i++) {
+    	fifo_push_byte(fifo, *(buffer + i));
     }
 
     fill_header();
@@ -156,7 +167,7 @@ static void clear_state_auth(void)
     pState->authState = AUTH_LOGIN_NONE;
 }
 
-static BOOL_T is_header_recived(void)
+static bool is_header_recived(void)
 {
 	return (FIFO_DATA_SIZE() == EGTS_HEAD_MIN_LEN ) ? TRUE_T : FALSE_T;
 }
@@ -164,34 +175,34 @@ static BOOL_T is_header_recived(void)
 static void fill_header(void)
 {
 	uint8_t val8;
-	pEgts_header_trans_layer->protocolVersion = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->securityKeyId = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->flags = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->headerLen = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->headerEncoder = FIFO_POP_BYTE();
+	pEgts_header_trans_layer->protocolVersion = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->securityKeyId = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->flags = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->headerLen = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->headerEncoder = FIFO_POP_BYTE(fifo);
 
-	val8 = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->frameDataLength = FIFO_POP_BYTE();
+	val8 = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->frameDataLength = FIFO_POP_BYTE(fifo);
 	pEgts_header_trans_layer->frameDataLength <<= 8;
 	pEgts_header_trans_layer->frameDataLength |= val8;
 
-	val8 = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->packetId = FIFO_POP_BYTE();
+	val8 = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->packetId = FIFO_POP_BYTE(fifo);
 	pEgts_header_trans_layer->packetId <<= 8;
 	pEgts_header_trans_layer->packetId |= val8;
 
-	pEgts_header_trans_layer->packetType = FIFO_POP_BYTE();
-	pEgts_header_trans_layer->crcHeader = FIFO_POP_BYTE();
+	pEgts_header_trans_layer->packetType = FIFO_POP_BYTE(fifo);
+	pEgts_header_trans_layer->crcHeader = FIFO_POP_BYTE(fifo);
 
 	pState->req_type = (EGTS_PT_APPDATA == pEgts_header_trans_layer->packetType) ? EGTS_ANSW : EGTS_ANSWER_NOT;
 }
 
-static BOOL_T is_full_pack_received(void) 
+static bool is_full_pack_received(void)
 {
 	return (FIFO_DATA_SIZE() != (pEgts_header_trans_layer->frameDataLength + sizeof(uint16_t))) ? TRUE_T : FALSE_T;
 }
 
-static BOOL_T is_crc_ok(void)
+static bool is_crc_ok(void)
 {
 	return FALSE_T;
 }
@@ -200,27 +211,27 @@ static void fill_record_header(void)
 {
 	uint8_t val8;
 
-	val8 = FIFO_POP_BYTE();
-	pEgts_header_record->recordLength = FIFO_POP_BYTE();
+	val8 = FIFO_POP_BYTE(fifo);
+	pEgts_header_record->recordLength = FIFO_POP_BYTE(fifo);
 	pEgts_header_record->recordLength <<= 8;
 	pEgts_header_record->recordLength |= val8;
 
-	val8 = FIFO_POP_BYTE();
-	pEgts_header_record->recordNumber = FIFO_POP_BYTE();
+	val8 = FIFO_POP_BYTE(fifo);
+	pEgts_header_record->recordNumber = FIFO_POP_BYTE(fifo);
 	pEgts_header_record->recordNumber <<= 8;
 	pEgts_header_record->recordNumber |= val8;
 
-	pEgts_header_record->recordFlags  = FIFO_POP_BYTE();
+	pEgts_header_record->recordFlags  = FIFO_POP_BYTE(fifo);
 
 	/* TODO: egts */
 	if(pEgts_header_record->recordFlags){
 
 	}
-	pEgts_header_record->sourceServiceType = FIFO_POP_BYTE();
-	pEgts_header_record->recipientServiceType = FIFO_POP_BYTE();
+	pEgts_header_record->sourceServiceType = FIFO_POP_BYTE(fifo);
+	pEgts_header_record->recipientServiceType = FIFO_POP_BYTE(fifo);
 }
 
-static BOOL_T is_not_answer_from_server(void) 
+static bool is_not_answer_from_server(void)
 {
 	return ( pEgts_header_trans_layer->packetType != EGTS_PT_RESPONSE ) ? TRUE_T : FALSE_T;
 }
@@ -232,13 +243,13 @@ static void  check_response(void)
 	if( is_not_answer_from_server() ){
 		return;
 	}
-	val8 = FIFO_POP_BYTE();
-	pState->pid = FIFO_POP_BYTE();
+	val8 = FIFO_POP_BYTE(fifo);
+	pState->pid = FIFO_POP_BYTE(fifo);
 	pState->pid <<= 8;
 	pState->pid |= val8;
-	pState->error = FIFO_POP_BYTE();
+	pState->error = FIFO_POP_BYTE(fifo);
 }
-static BOOL_T is_buffer_not_empty(void) 
+static bool is_buffer_not_empty(void)
 {
 	return (FIFO_DATA_SIZE() > 0) ? TRUE_T : FALSE_T;
 }
@@ -247,9 +258,9 @@ static void get_pack_data(void)
 {
 	uint8_t val8;
 
-	pSubRecord->type = FIFO_POP_BYTE();
-	val8 = FIFO_POP_BYTE();
-	pSubRecord->length = FIFO_POP_BYTE();
+	pSubRecord->type = FIFO_POP_BYTE(fifo);
+	val8 = FIFO_POP_BYTE(fifo);
+	pSubRecord->length = FIFO_POP_BYTE(fifo);
 	pSubRecord->length <<= 8;
 	pSubRecord->length |= val8;
 }
@@ -261,7 +272,7 @@ static void record_response(void)
 	DEBUG_PRINT("Record Response\n");
 	
 	for(uint16_t i = 0; i < pSubRecord->length ; i++) {
-		 data[i] = FIFO_POP_BYTE();
+		 data[i] = FIFO_POP_BYTE(fifo);
 	}
 	if( EGTS_PC_OK == data[2]){
 	    DEBUG_PRINT("OK response\n");
@@ -277,7 +288,7 @@ static void auth_term_id(void)
 {
     DEBUG_PRINT("auth_term_id\n");
 	for(uint16_t i = 0; i < pSubRecord->length ; i++) {
-	    DEBUG_PRINTF("%02x ", FIFO_POP_BYTE());
+	    DEBUG_PRINTF("%02x ", FIFO_POP_BYTE(fifo));
 	}
 }
 
@@ -285,14 +296,14 @@ static void auth_module_data(void)
 {
     DEBUG_PRINT("auth_module_data\n");
 	for(uint16_t i = 0; i < pSubRecord->length ; i++) {
-	    DEBUG_PRINTF("%02x ", FIFO_POP_BYTE());
+	    DEBUG_PRINTF("%02x ", FIFO_POP_BYTE(fifo));
 	}
 }
 static void auth_vehicle(void) 
 {
     DEBUG_PRINT("auth_vehicle\n");
 	for(uint16_t i = 0; i < pSubRecord->length ; i++) {
-	    DEBUG_PRINTF("%02x ", FIFO_POP_BYTE());
+	    DEBUG_PRINTF("%02x ", FIFO_POP_BYTE(fifo));
 	}
 }
 
@@ -302,7 +313,7 @@ static void	auth_params(void)
 	uint8_t data[pSubRecord->length];
 
 	for(uint16_t i = 0; i < pSubRecord->length ; i++) {
-		data[i] = FIFO_POP_BYTE();
+		data[i] = FIFO_POP_BYTE(fifo);
 		DEBUG_PRINTH(data[i]);
 	}
 	gsm_head_set(REG_HALF);
@@ -323,14 +334,14 @@ static void auth_service_info(void)
 	DEBUG_PRINT("Service info\n");
 	
 	for(uint16_t i = 0; i < pSubRecord->length ; i++) {
-		DEBUG_PRINTF("%02x ", FIFO_POP_BYTE());
+		DEBUG_PRINTF("%02x ", FIFO_POP_BYTE(fifo));
 	}
 }
 
 static void	auth_res_code(void) 
 {
     DEBUG_PRINT("RESULT CODE\n");
-	if( EGTS_PC_OK ==  FIFO_POP_BYTE()){
+	if( EGTS_PC_OK ==  FIFO_POP_BYTE(fifo)){
 	    DEBUG_PRINT("OK\n");
 	}
 	else{
@@ -389,8 +400,8 @@ static void handler_data(void)
 static void get_crc_frame_data(void)
 {
 	uint8_t val8;
-	val8 = FIFO_POP_BYTE();
-	pEgts_header_record->frameCRC = FIFO_POP_BYTE();
+	val8 = FIFO_POP_BYTE(fifo);
+	pEgts_header_record->frameCRC = FIFO_POP_BYTE(fifo);
 	pEgts_header_record->frameCRC <<= 8;
 	pEgts_header_record->frameCRC |= val8;
 }
